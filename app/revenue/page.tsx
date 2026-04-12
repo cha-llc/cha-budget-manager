@@ -250,7 +250,7 @@ export default function Revenue() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                       <span style={{ fontWeight: '600', color: '#1A1A2E' }}>{product}</span>
                       <span style={{ fontSize: '16px', fontWeight: 'bold', color: '#2A9D8F' }}>
-                        ${amount.toFixed(2)}
+                        ${(amount as number).toFixed(2)}
                       </span>
                     </div>
                     <div style={{
@@ -261,13 +261,13 @@ export default function Revenue() {
                       overflow: 'hidden'
                     }}>
                       <div style={{
-                        width: `${(amount / Math.max(...revenueByProduct.map(p => p[1]))) * 100}%`,
+                        width: `${((amount as number) / Math.max(...revenueByProduct.map((p: any) => p[1] as number))) * 100}%`,
                         height: '100%',
                         backgroundColor: '#2A9D8F'
                       }} />
                     </div>
                     <p style={{ margin: '0.5rem 0 0 0', fontSize: '11px', color: '#999' }}>
-                      {((amount / totalRevenue) * 100).toFixed(1)}% of total
+                      {(((amount as number) / totalRevenue) * 100).toFixed(1)}% of total
                     </p>
                   </div>
                 ))
