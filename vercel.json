@@ -1,16 +1,4 @@
 {
   "buildCommand": "npm run build",
-  "outputDirectory": ".next",
-  "env": {
-    "NEXT_PUBLIC_SUPABASE_URL": "@next_public_supabase_url",
-    "NEXT_PUBLIC_SUPABASE_ANON_KEY": "@next_public_supabase_anon_key",
-    "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "@next_public_stripe_publishable_key",
-    "STRIPE_SECRET_KEY": "@stripe_secret_key",
-    "HUBSPOT_API_KEY": "@hubspot_api_key",
-    "NEXT_PUBLIC_HUBSPOT_OWNER_ID": "@next_public_hubspot_owner_id",
-    "SLACK_BOT_TOKEN": "@slack_bot_token",
-    "SLACK_WEBHOOK_URL": "@slack_webhook_url",
-    "GMAIL_APP_PASSWORD": "@gmail_app_password",
-    "GMAIL_USER": "@gmail_user"
-  }
+  "outputDirectory": ".next"
 }
