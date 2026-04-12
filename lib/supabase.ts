@@ -1,9 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://vzzzqsmqqaoilkmskadl.supabase.co';
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'build-time-placeholder';
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+// Only create client if we have valid keys (for runtime, not build)
+export const supabase = typeof window !== 'undefined' || process.env.NODE_ENV === 'production' 
+  ? createClient(supabaseUrl, supabaseKey)
+  : null;
 
 export type Database = {
   public: {
