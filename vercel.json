@@ -1,0 +1,17 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": ".next",
+  "env": [
+    "NEXT_PUBLIC_SUPABASE_URL",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+    "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY",
+    "STRIPE_SECRET_KEY",
+    "HUBSPOT_API_KEY",
+    "NEXT_PUBLIC_HUBSPOT_OWNER_ID",
+    "SLACK_BOT_TOKEN",
+    "SLACK_WEBHOOK_URL",
+    "GMAIL_APP_PASSWORD",
+    "GMAIL_USER",
+    "NEXT_PUBLIC_APP_URL"
+  ]
+}
