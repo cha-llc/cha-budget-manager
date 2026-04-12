@@ -57,8 +57,8 @@ export default function Revenue() {
     revenue.reduce((acc: any, r) => {
       acc[r.product_name] = (acc[r.product_name] || 0) + r.amount;
       return acc;
-    }, {})
-  ).sort((a, b) => b[1] - a[1]);
+    }, {} as any)
+  ).sort((a: any, b: any) => b[1] - a[1]);
 
   return (
     <Layout activeTab="revenue">
@@ -108,7 +108,7 @@ export default function Revenue() {
               {revenueByProduct.length > 0 ? revenueByProduct[0][0] : 'N/A'}
             </p>
             <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: '#999' }}>
-              ${revenueByProduct.length > 0 ? revenueByProduct[0][1].toFixed(2) : '0.00'}
+              ${revenueByProduct.length > 0 ? (revenueByProduct[0][1] as number).toFixed(2) : '0.00'}
             </p>
           </div>
         </div>

@@ -84,7 +84,7 @@ export default function Reports() {
             borderRadius: '8px',
             padding: '1.5rem',
             boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-            borderLeft: '4px solid '#9B5DE5'
+            borderLeft: '4px solid #9B5DE5'
           }}>
             <p style={{ margin: 0, fontSize: '12px', color: '#666' }}>Net</p>
             <p style={{ margin: '8px 0 0 0', fontSize: '24px', fontWeight: 'bold', color: totalRev - totalSpent >= 0 ? '#2A9D8F' : '#C1121F' }}>
