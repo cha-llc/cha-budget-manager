@@ -1,4 +1,7 @@
 {
   "buildCommand": "npm run build",
-  "outputDirectory": ".next"
+  "outputDirectory": ".next",
+  "env": {
+    "ANTHROPIC_API_KEY": "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"
+  }
 }
