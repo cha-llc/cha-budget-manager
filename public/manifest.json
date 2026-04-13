@@ -1,0 +1,12 @@
+{
+  "name": "C.H.A. LLC Budget Manager",
+  "short_name": "CHA Budget",
+  "description": "AI-Powered Financial Intelligence",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#0d0d1a",
+  "theme_color": "#1A1A2E",
+  "icons": [
+    { "src": "/favicon.ico", "sizes": "64x64", "type": "image/x-icon" }
+  ]
+}
