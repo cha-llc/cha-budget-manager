@@ -37,7 +37,7 @@ export default function Documents() {
       });
       const isPdf = file.type === 'application/pdf';
       const mediaType = isPdf ? 'application/pdf' : (file.type || 'image/jpeg');
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      const response = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
