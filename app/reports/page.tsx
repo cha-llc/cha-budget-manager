@@ -102,7 +102,7 @@ export default function Reports() {
   const emailReport = async () => {
     setSendingEmail(true);
     try {
-      // Build a clean report summary to send via Gmail MCP
+      // Build a clean report summary to send to company email
       const reportData = {
         period, division,
         totalRevenue: totalRevenue.toFixed(2),
@@ -129,7 +129,7 @@ export default function Reports() {
       const data = await res.json();
       const text = data.content?.find((c: any) => c.type === 'text')?.text || '';
       const emailContent = JSON.parse(text.replace(/```json|```/g, '').trim());
-      setEmailSent(`✅ Report ready to send: "${emailContent.subject}" — Copy the report content to Gmail at cs@cjhadisa.com`);
+      setEmailSent(`✅ Report ready to send: "${emailContent.subject}" — Report composed — send to cs@cjhadisa.com`);
       setTimeout(() => setEmailSent(''), 8000);
     } catch { setEmailSent('Could not compose report. Try generating AI analysis first.'); }
     finally { setSendingEmail(false); }
@@ -144,7 +144,7 @@ export default function Reports() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2rem' }}>
           <div>
             <h2 style={{ margin: '0 0 6px 0', color: '#fff', fontSize: '22px', fontWeight: '700', fontFamily: "'Lora', serif" }}>Financial Reports</h2>
-            <p style={{ margin: 0, color: 'rgba(255,255,255,0.5)', fontSize: '14px' }}>AI-generated reports • Sent privately to cs@cjhadisa.com</p>
+            <p style={{ margin: 0, color: 'rgba(255,255,255,0.5)', fontSize: '14px' }}>AI-generated reports • Sent to company email cs@cjhadisa.com</p>
           </div>
           <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
             <select value={division} onChange={e => setDivision(e.target.value)} style={{ width: 'auto !important', padding: '8px 14px !important' }}>

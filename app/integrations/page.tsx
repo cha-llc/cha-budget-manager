@@ -9,7 +9,7 @@ const INTEGRATIONS = [
   { name: 'Supabase', status: 'connected', description: 'Private database — all your financial data stored securely', icon: '🗄️', color: '#2A9D8F' },
   { name: 'Stripe', status: 'connected', description: 'Payment processing & revenue tracking', icon: '💳', color: '#9B5DE5' },
   { name: 'HubSpot', status: 'connected', description: 'Deal tracking & CRM pipeline', icon: '🤝', color: '#C9A84C' },
-  { name: 'Gmail', status: 'connected', description: 'Email reports sent only to cs@cjhadisa.com', icon: '✉️', color: '#C1121F' },
+  { name: 'Company Email', status: 'connected', description: 'Reports sent to cs@cjhadisa.com only', icon: '✉️', color: '#C1121F' },
   { name: 'Google Calendar', status: 'connected', description: 'Budget review scheduling', icon: '📅', color: '#2A9D8F' },
   { name: 'Vercel', status: 'connected', description: 'Deployment & hosting', icon: '▲', color: '#fff' },
   { name: 'AI (Anthropic)', status: 'connected', description: 'Document OCR, budget generation, spending analysis', icon: '🤖', color: '#9B5DE5' },
