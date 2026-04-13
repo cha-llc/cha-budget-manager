@@ -27,7 +27,7 @@ export default function Integrations() {
         <div style={{ padding: '1rem 1.25rem', background: 'rgba(42,157,143,0.08)', border: '1px solid rgba(42,157,143,0.3)', borderRadius: '10px', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <span style={{ fontSize: '1.2rem' }}>🔒</span>
           <p style={{ margin: 0, color: '#2A9D8F', fontSize: '13px', fontWeight: '500' }}>
-            Your financial data is private. Reports go only to your Gmail (cs@cjhadisa.com). No Slack, no shared channels, no third-party eyes.
+            Your financial data is private. Reports are sent only to cs@cjhadisa.com. No third-party channels have access to your financials.
           </p>
         </div>
 
