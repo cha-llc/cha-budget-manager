@@ -126,31 +126,137 @@ export default function Budgets() {
     setPersCats(persCats.map(c => c.id === id ? { ...c, budgeted_amount: amount } : c));
   };
 
-  // Import transactions from a document into personal budget
+  // Smart category matcher
+  const matchCategory = (description: string, type: 'income' | 'expense'): string => {
+    const d = description.toLowerCase();
+    if (type === 'income') {
+      if (d.includes('salary') || d.includes('payroll') || d.includes('regular pay') || d.includes('wage') || d.includes('net pay') || d.includes('direct deposit')) return 'Salary / Wages';
+      if (d.includes('business') || d.includes('consulting') || d.includes('invoice') || d.includes('cha') || d.includes('stripe')) return 'Business Income';
+      if (d.includes('freelance') || d.includes('contract')) return 'Freelance';
+      if (d.includes('interest') || d.includes('dividend') || d.includes('refund') || d.includes('transfer')) return 'Other Income';
+      return 'Other Income';
+    } else {
+      if (d.includes('rent') || d.includes('housing') || d.includes('mortgage') || d.includes('lease')) return 'Housing / Rent';
+      if (d.includes('grocery') || d.includes('food') || d.includes('walmart') || d.includes('kroger') || d.includes('publix') || d.includes('whole foods') || d.includes('trader joe') || d.includes('aldi')) return 'Food & Groceries';
+      if (d.includes('uber') || d.includes('lyft') || d.includes('gas') || d.includes('fuel') || d.includes('airline') || d.includes('flight') || d.includes('avianca') || d.includes('transport') || d.includes('parking')) return 'Transportation';
+      if (d.includes('medical') || d.includes('dental') || d.includes('vision') || d.includes('health') || d.includes('pharmacy') || d.includes('doctor') || d.includes('hospital') || d.includes('insurance') && (d.includes('health') || d.includes('medical') || d.includes('dental') || d.includes('vision'))) return 'Health & Wellness';
+      if (d.includes('netflix') || d.includes('spotify') || d.includes('entertainment') || d.includes('movie') || d.includes('amazon prime') || d.includes('hulu') || d.includes('disney')) return 'Entertainment';
+      if (d.includes('savings') || d.includes('save') || d.includes('deposit to savings')) return 'Savings';
+      if (d.includes('401k') || d.includes('401(k)') || d.includes('emergency') || d.includes('retirement')) return 'Emergency Fund';
+      if (d.includes('federal') || d.includes('state tax') || d.includes('fica') || d.includes('social security') || d.includes('medicare') || d.includes('income tax')) return 'Taxes';
+      return 'Personal Care';
+    }
+  };
+
+  // Import transactions from a document into personal budget — smart filtering by doc type
   const importDocToPersonal = async (doc: any) => {
     setImporting(doc.id); setImportMsg('');
     try {
-      const txs = doc.transactions || [];
-      if (!txs.length) { setImportMsg('No transactions found in this document.'); setImporting(null); return; }
-      const { data } = await supabase.from('personal_transactions').insert(
-        txs.map((tx: any) => ({
-          description: tx.description || 'Imported',
-          amount: Math.abs(parseFloat(tx.amount) || 0),
-          type: tx.type === 'credit' ? 'income' : 'expense',
-          category_name: tx.type === 'credit' ? 'Other Income' : 'Uncategorized',
-          date: tx.date || doc.uploaded_at?.split('T')[0] || new Date().toISOString().split('T')[0],
-          source: `document:${doc.file_name}`,
-          source_doc_id: doc.id,
-        }))
-      ).select();
+      const txs: any[] = doc.transactions || [];
+      const docTypeLower = (doc.doc_type || '').toLowerCase();
+      const isPayStub = docTypeLower.includes('pay') || docTypeLower.includes('stub') || docTypeLower.includes('paycheck') || docTypeLower.includes('payroll');
+      const isBankStatement = docTypeLower.includes('bank') || docTypeLower.includes('statement') || docTypeLower.includes('checking') || docTypeLower.includes('savings');
+      const fallbackDate = doc.uploaded_at?.split('T')[0] || new Date().toISOString().split('T')[0];
+
+      let inserts: any[] = [];
+
+      if (isPayStub) {
+        // For pay stubs: import NET PAY as one income entry + meaningful deductions
+        // Find net pay from key_figures first, fall back to net_cashflow
+        const kf = doc.key_figures || [];
+        const netPayFigure = kf.find((k: any) => k.label?.toLowerCase().includes('net pay') || k.label?.toLowerCase() === 'net amount');
+        const netPayAmount = netPayFigure
+          ? parseFloat(netPayFigure.value?.replace(/[$,]/g, '') || '0')
+          : parseFloat(doc.net_cashflow || doc.total_income || '0');
+
+        const payDate = txs[0]?.date || fallbackDate;
+        const period = doc.period || 'Pay Period';
+
+        // One income entry for net pay
+        if (netPayAmount > 0) {
+          inserts.push({
+            description: `Net Pay — ${period}`,
+            amount: netPayAmount,
+            type: 'income',
+            category_name: 'Salary / Wages',
+            date: payDate,
+            source: `document:${doc.file_name}`,
+            source_doc_id: doc.id,
+          });
+        }
+
+        // Import meaningful deductions (skip 401k transfers to savings — those show up as deposits too)
+        const skipDeductions = ['deposit to checking', 'deposit to savings', 'savings deposit', 'direct deposit'];
+        const deductions = txs.filter((tx: any) => {
+          if (tx.type !== 'debit') return false;
+          const desc = (tx.description || '').toLowerCase();
+          return !skipDeductions.some(s => desc.includes(s));
+        });
+
+        deductions.forEach((tx: any) => {
+          inserts.push({
+            description: tx.description,
+            amount: Math.abs(parseFloat(tx.amount) || 0),
+            type: 'expense',
+            category_name: matchCategory(tx.description, 'expense'),
+            date: tx.date || payDate,
+            source: `document:${doc.file_name}`,
+            source_doc_id: doc.id,
+          });
+        });
+
+      } else if (isBankStatement) {
+        // For bank statements: import all transactions with smart categorization
+        // Skip duplicate internal transfers (e.g. if same amount appears as both credit and debit same day)
+        txs.forEach((tx: any) => {
+          const amount = Math.abs(parseFloat(tx.amount) || 0);
+          if (amount === 0) return;
+          const type = tx.type === 'credit' ? 'income' : 'expense';
+          inserts.push({
+            description: tx.description || 'Bank Transaction',
+            amount,
+            type,
+            category_name: matchCategory(tx.description || '', type),
+            date: tx.date || fallbackDate,
+            source: `document:${doc.file_name}`,
+            source_doc_id: doc.id,
+          });
+        });
+
+      } else {
+        // Receipts, invoices, other: import as-is with smart categorization
+        txs.forEach((tx: any) => {
+          const amount = Math.abs(parseFloat(tx.amount) || 0);
+          if (amount === 0) return;
+          const type = tx.type === 'credit' ? 'income' : 'expense';
+          inserts.push({
+            description: tx.description || 'Transaction',
+            amount,
+            type,
+            category_name: matchCategory(tx.description || '', type),
+            date: tx.date || fallbackDate,
+            source: `document:${doc.file_name}`,
+            source_doc_id: doc.id,
+          });
+        });
+      }
+
+      if (!inserts.length) { setImportMsg('No importable transactions found in this document.'); setImporting(null); return; }
+
+      const { data } = await supabase.from('personal_transactions').insert(inserts).select();
       if (data) {
         setPersTxs(prev => [...data, ...prev]);
         await supabase.from('budget_documents').update({ budget_type: 'both' }).eq('id', doc.id);
-        setImportMsg(`✅ Imported ${data.length} transactions from "${doc.file_name}" into your personal budget`);
+        const incomeCount = inserts.filter(i => i.type === 'income').length;
+        const expenseCount = inserts.filter(i => i.type === 'expense').length;
+        setImportMsg(`✅ Imported from "${doc.file_name}": ${incomeCount} income item${incomeCount !== 1 ? 's' : ''}, ${expenseCount} expense item${expenseCount !== 1 ? 's' : ''} — all categorized automatically`);
       }
-    } catch { setImportMsg('Import failed.'); }
+    } catch (e: any) {
+      console.error('Import error:', e);
+      setImportMsg('Import failed. Try again.');
+    }
     setImporting(null);
-    setTimeout(() => setImportMsg(''), 6000);
+    setTimeout(() => setImportMsg(''), 8000);
   };
 
   // Build a full personal budget from ALL uploaded documents via AI
@@ -158,8 +264,32 @@ export default function Budgets() {
     if (!documents.length) { setBuildMsg('No documents uploaded yet. Go to Document Intelligence first.'); return; }
     setBuildingFromDocs(true); setBuildMsg('');
     try {
-      const allTxs = documents.flatMap(d => (d.transactions || []).map((t: any) => ({ ...t, doc: d.file_name, period: d.period })));
-      const totalIncome = documents.reduce((s, d) => s + parseFloat(d.total_income || 0), 0);
+      // For pay stubs: use net pay (key_figures) not total_income which may be gross
+      const getDocNetIncome = (d: any) => {
+        const docType = (d.doc_type || '').toLowerCase();
+        if (docType.includes('pay') || docType.includes('stub') || docType.includes('paycheck')) {
+          const kf = d.key_figures || [];
+          const netPayFig = kf.find((k: any) => k.label?.toLowerCase().includes('net pay'));
+          if (netPayFig) return parseFloat(netPayFig.value?.replace(/[$,]/g, '') || '0');
+          return parseFloat(d.net_cashflow || d.total_income || '0');
+        }
+        return parseFloat(d.total_income || '0');
+      };
+
+      const allTxs = documents.flatMap(d => {
+        const docType = (d.doc_type || '').toLowerCase();
+        const isPayStub = docType.includes('pay') || docType.includes('stub') || docType.includes('paycheck');
+        if (isPayStub) {
+          // For pay stubs only send net pay and deductions — not gross
+          const kf = d.key_figures || [];
+          const netPayFig = kf.find((k: any) => k.label?.toLowerCase().includes('net pay'));
+          const netPay = netPayFig ? parseFloat(netPayFig.value?.replace(/[$,]/g, '') || '0') : parseFloat(d.net_cashflow || '0');
+          const deductions = (d.transactions || []).filter((t: any) => t.type === 'debit');
+          return [{ description: 'Net Pay', amount: netPay, type: 'credit', doc: d.file_name, period: d.period }, ...deductions.map((t: any) => ({ ...t, doc: d.file_name, period: d.period }))];
+        }
+        return (d.transactions || []).map((t: any) => ({ ...t, doc: d.file_name, period: d.period }));
+      });
+      const totalIncome = documents.reduce((s, d) => s + getDocNetIncome(d), 0);
       const totalExpenses = documents.reduce((s, d) => s + parseFloat(d.total_expenses || 0), 0);
       const res = await fetch('/api/ai', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -403,7 +533,19 @@ export default function Budgets() {
                           <p style={{ margin: 0, color: '#fff', fontWeight: '500', fontSize: '13px' }}>{doc.file_name}</p>
                           <p style={{ margin: 0, color: 'rgba(255,255,255,0.35)', fontSize: '11px' }}>{doc.doc_type}{doc.period ? ` • ${doc.period}` : ''} • {txCount} transactions</p>
                         </div>
-                        <span style={{ fontSize: '13px', color: '#2A9D8F', fontWeight: '600', whiteSpace: 'nowrap' }}>+${parseFloat(doc.total_income || 0).toLocaleString()}</span>
+                        <span style={{ fontSize: '13px', color: '#2A9D8F', fontWeight: '600', whiteSpace: 'nowrap' }}>
+                          {/* Show net pay for pay stubs, total income for other docs */}
+                          +${(() => {
+                            const dt = (doc.doc_type || '').toLowerCase();
+                            if (dt.includes('pay') || dt.includes('stub') || dt.includes('paycheck')) {
+                              const kf = doc.key_figures || [];
+                              const netFig = kf.find((k: any) => k.label?.toLowerCase().includes('net pay'));
+                              if (netFig) return parseFloat(netFig.value?.replace(/[$,]/g, '') || '0').toLocaleString();
+                              return parseFloat(doc.net_cashflow || doc.total_income || '0').toLocaleString();
+                            }
+                            return parseFloat(doc.total_income || 0).toLocaleString();
+                          })()}
+                        </span>
                         <span style={{ fontSize: '13px', color: '#C1121F', fontWeight: '600', whiteSpace: 'nowrap' }}>-${parseFloat(doc.total_expenses || 0).toLocaleString()}</span>
                         {imported ? (
                           <span style={{ padding: '5px 12px', borderRadius: '8px', background: 'rgba(42,157,143,0.12)', color: '#2A9D8F', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap' }}>✅ Imported</span>
