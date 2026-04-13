@@ -25,17 +25,45 @@ interface QueuedFile {
   error?: string;
 }
 
-const AI_SYSTEM = `You are an expert financial document analyst. Extract ALL financial data from the document.
+const AI_SYSTEM = `You are a precise financial document analyst. Extract ALL financial data accurately.
 
-RULES:
-1. Return ONLY a valid JSON object. No text before or after. No markdown.
-2. Extract EVERY transaction, charge, deposit, and payment visible.
-3. Amounts must be plain numbers (no $ signs, no commas).
-4. Dates in YYYY-MM-DD format.
-5. type "credit" = money IN (deposit, income, payment received). type "debit" = money OUT (charge, withdrawal, payment made).
-6. total_income = sum of all credit amounts. total_expenses = sum of all debit amounts. net_cashflow = total_income - total_expenses.
+CRITICAL RULES FOR EACH DOCUMENT TYPE:
 
-JSON structure:
+PAY STUB / PAYCHECK:
+- total_income = NET PAY (the actual take-home amount after all deductions). This is the "Net Pay", "Net Amount", or "Amount Paid" field.
+- total_expenses = total deductions (federal tax + state tax + FICA + social security + medicare + health insurance + 401k + all other withholdings combined)
+- net_cashflow = total_income (net pay)
+- transactions: one credit entry for NET PAY amount, then debit entries for each individual deduction line (Federal Tax, State Tax, Social Security, Medicare, Health Insurance, 401k, etc.)
+- key_figures MUST include: Gross Pay, Net Pay (clearly labeled), Pay Period, YTD Gross, YTD Net, each deduction amount
+
+BANK STATEMENT:
+- total_income = sum of ALL deposits, credits, and incoming transfers
+- total_expenses = sum of ALL withdrawals, debits, charges, and outgoing payments
+- net_cashflow = total_income - total_expenses
+- transactions: every line item with date, description, amount, type (credit=deposit/income, debit=withdrawal/charge)
+- key_figures: Opening Balance, Closing Balance, Total Deposits, Total Withdrawals
+
+RECEIPT / INVOICE:
+- total_expenses = total amount paid (including tax)
+- total_income = 0
+- net_cashflow = -total_expenses
+- transactions: one debit entry for the total, itemized lines if visible
+- key_figures: subtotal, tax amount, total paid, merchant name
+
+TAX FORM (W2, 1099):
+- total_income = Box 1 wages (W2) or total compensation (1099)
+- total_expenses = total taxes withheld
+- key_figures: all box values clearly labeled
+
+GENERAL RULES (ALL DOCUMENTS):
+1. Return ONLY a valid JSON object. No text before or after. No markdown fences.
+2. Amounts must be plain numbers only — no $ signs, no commas (e.g. 1234.56 not $1,234.56).
+3. Dates in YYYY-MM-DD format where possible.
+4. NEVER confuse gross pay with net pay on pay stubs. Net pay is ALWAYS less than gross pay.
+5. If a value is unclear, read it carefully again before estimating.
+6. period = pay period dates or statement period (e.g. "2025-11-01 to 2025-11-15").
+
+Return this exact JSON:
 {"doc_type":"string","period":"string","summary":"string","key_figures":[{"label":"string","value":"string","category":"income|expense|balance|other"}],"transactions":[{"date":"string","description":"string","amount":0,"type":"credit|debit"}],"tax_relevant":["string"],"alerts":["string"],"total_income":0,"total_expenses":0,"net_cashflow":0}`;
 
 export default function Documents() {
@@ -130,7 +158,17 @@ export default function Documents() {
             role: 'user',
             content: [
               { type: isPdf ? 'document' : 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
-              { type: 'text', text: `Document type: ${docLabel}. Extract all financial data.` }
+              { type: 'text', text: `This document is a ${docLabel}. ${
+                item.docType === 'paycheck_stub'
+                  ? 'IMPORTANT: Find the NET PAY (take-home amount after all deductions) and use that as total_income. Do NOT use gross pay as total_income. List every deduction line individually as a debit transaction.'
+                  : item.docType === 'bank_statement'
+                  ? 'Extract every single transaction. Credits are deposits/income. Debits are withdrawals/charges. Calculate totals accurately.'
+                  : item.docType === 'tax_form'
+                  ? 'Extract all box values. Use Box 1 (W2) or total compensation (1099) as total_income. Total taxes withheld as total_expenses.'
+                  : item.docType === 'receipt'
+                  ? 'The total amount paid is total_expenses. Itemize all line items as debit transactions.'
+                  : 'Extract all financial figures accurately.'
+              } Be precise with every number.` }
             ]
           }]
         })
