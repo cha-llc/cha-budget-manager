@@ -6,9 +6,30 @@ import { supabase } from '@/lib/supabase';
 import { useBudgetStore } from '@/lib/store';
 import Link from 'next/link';
 
+const card = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(201,168,76,0.2)', borderRadius: '12px', padding: '1.5rem' };
+
+const LIVE_PRODUCTS = [
+  { name: 'BrandPulse', price: 47, url: 'getbrandpulse.vercel.app' },
+  { name: 'Clarity Engine', price: 37, url: 'getclarityengine.vercel.app' },
+  { name: 'Flagged', price: 4.99, url: 'getflagged.vercel.app' },
+  { name: 'Freedom Era Audit', price: 150, url: 'freedomaudit.youcanbook.me' },
+  { name: 'Business Ops Fixer', price: 497, url: 'calendly.com/cjhadisa/business-ops-fixer' },
+];
+
+const QUICK_LINKS = [
+  { href: '/documents', icon: '🗂️', label: 'Upload Document', desc: 'AI extracts financial data' },
+  { href: '/goals', icon: '🎯', label: 'Track Goals', desc: 'Savings & milestone progress' },
+  { href: '/tax', icon: '🧾', label: 'Tax Planning', desc: 'Optimize deductions' },
+  { href: '/investments', icon: '📈', label: 'Portfolio', desc: 'Track your investments' },
+  { href: '/networth', icon: '🏦', label: 'Net Worth', desc: 'Assets & liabilities' },
+  { href: '/domination', icon: '👑', label: 'Domination Plan', desc: 'Your financial blueprint' },
+];
+
 export default function Dashboard() {
   const { budgets, expenses, revenue, setBudgets, setExpenses, setRevenue } = useBudgetStore();
   const [loading, setLoading] = useState(true);
+  const [aiInsight, setAiInsight] = useState('');
+  const [loadingInsight, setLoadingInsight] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -16,204 +37,129 @@ export default function Dashboard() {
         const [budgetsRes, expensesRes, revenueRes] = await Promise.all([
           supabase.from('division_budgets').select('*'),
           supabase.from('expenses').select('*'),
-          supabase.from('revenue').select('*')
+          supabase.from('revenue').select('*'),
         ]);
-
         if (budgetsRes.data) setBudgets(budgetsRes.data as any);
         if (expensesRes.data) setExpenses(expensesRes.data as any);
         if (revenueRes.data) setRevenue(revenueRes.data as any);
-      } catch (error) {
-        console.error('Error fetching data:', error);
-      } finally {
-        setLoading(false);
-      }
+      } catch {}
+      finally { setLoading(false); }
     };
-
     fetchData();
   }, []);
 
-  const divisions = ['Consulting', 'Tea Time Network', 'Digital Tools', 'Books'];
-  const totalBudget = budgets.reduce((sum, b) => sum + b.monthly_budget, 0);
-  const totalSpent = expenses.reduce((sum, e) => sum + e.amount, 0);
-  const totalRevenue = revenue.reduce((sum, r) => sum + r.amount, 0);
+  const totalBudget = budgets.reduce((s, b) => s + b.monthly_budget, 0);
+  const totalSpent = expenses.reduce((s, e) => s + e.amount, 0);
+  const totalRevenue = revenue.reduce((s, r) => s + r.amount, 0);
+  const netCashFlow = totalRevenue - totalSpent;
 
-  const MetricCard = ({ label, value, subtext, color = '#1A1A2E' }: any) => (
-    <div style={{
-      backgroundColor: '#fff',
-      border: '1px solid #e0e0e0',
-      borderRadius: '8px',
-      padding: '1.5rem',
-      flex: 1,
-      minWidth: '200px',
-      boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-      borderLeft: `4px solid ${color}`
-    }}>
-      <p style={{ margin: 0, fontSize: '12px', color: '#666', fontWeight: '500' }}>{label}</p>
-      <p style={{ margin: '8px 0 0 0', fontSize: '28px', fontWeight: 'bold', color }}>{value}</p>
-      <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: '#999' }}>{subtext}</p>
+  const getAIInsight = async () => {
+    setLoadingInsight(true);
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1000,
+          system: 'You are a financial advisor AI. Give a direct, strategic 2-3 sentence insight. No fluff.',
+          messages: [{ role: 'user', content: `C.H.A. LLC financial snapshot: Budget $${totalBudget}/mo, Spent $${totalSpent}, Revenue $${totalRevenue}, Net $${netCashFlow}. 5 products just launched April 10-11, 2026 with $0 revenue. Promos start April 14. Give a sharp, actionable insight for right now.` }]
+        })
+      });
+      const data = await res.json();
+      setAiInsight(data.content?.find((c: any) => c.type === 'text')?.text || '');
+    } catch {
+      setAiInsight('Could not load AI insight. Check your connection.');
+    } finally {
+      setLoadingInsight(false);
+    }
+  };
+
+  const MetricCard = ({ label, value, sub, color, icon }: any) => (
+    <div className="card-hover" style={{ ...card, borderLeft: `3px solid ${color}` }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</p>
+        <span style={{ fontSize: '1.2rem' }}>{icon}</span>
+      </div>
+      <p style={{ margin: '8px 0 4px 0', fontSize: '28px', fontWeight: '700', color }}>{value}</p>
+      <p style={{ margin: 0, fontSize: '12px', color: 'rgba(255,255,255,0.35)' }}>{sub}</p>
     </div>
   );
 
   return (
     <Layout activeTab="dashboard">
-      <div style={{ maxWidth: '1400px' }}>
-        <h2 style={{ margin: '0 0 1.5rem 0', color: '#1A1A2E', fontSize: '20px' }}>Dashboard Overview</h2>
-
-        {/* KPI Cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-          <MetricCard
-            label="Total Monthly Budget"
-            value={`$${totalBudget.toLocaleString()}`}
-            subtext={`${divisions.length} divisions`}
-            color="#2A9D8F"
-          />
-          <MetricCard
-            label="Total Spent (MTD)"
-            value={`$${totalSpent.toLocaleString()}`}
-            subtext={`${((totalSpent / totalBudget) * 100).toFixed(1)}% of budget`}
-            color="#C1121F"
-          />
-          <MetricCard
-            label="Remaining Budget"
-            value={`$${Math.max(0, totalBudget - totalSpent).toLocaleString()}`}
-            subtext={`${((Math.max(0, totalBudget - totalSpent) / totalBudget) * 100).toFixed(1)}% available`}
-            color="#C9A84C"
-          />
-          <MetricCard
-            label="Total Revenue"
-            value={`$${totalRevenue.toLocaleString()}`}
-            subtext={`From ${revenue.length} transactions`}
-            color="#9B5DE5"
-          />
+      <div style={{ maxWidth: '1200px' }}>
+        {/* Greeting */}
+        <div style={{ marginBottom: '2rem' }}>
+          <h2 style={{ margin: '0 0 6px 0', color: '#fff', fontSize: '24px', fontWeight: '700', fontFamily: "'Lora', serif" }}>
+            Financial Overview
+          </h2>
+          <p style={{ margin: 0, color: 'rgba(255,255,255,0.45)', fontSize: '14px' }}>
+            C.H.A. LLC • {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+          </p>
         </div>
 
-        {/* Division Breakdown */}
-        <div style={{
-          backgroundColor: '#fff',
-          border: '1px solid #e0e0e0',
-          borderRadius: '8px',
-          padding: '1.5rem',
-          marginBottom: '2rem',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
-        }}>
-          <h3 style={{ margin: '0 0 1.5rem 0', color: '#1A1A2E' }}>Division Health Check</h3>
-          <div style={{ display: 'grid', gap: '1rem' }}>
-            {divisions.map((division) => {
-              const budget = budgets.find(b => b.division === division);
-              const spent = expenses
-                .filter(e => e.division === division)
-                .reduce((sum, e) => sum + e.amount, 0);
-              const budgetAmount = budget?.monthly_budget || 0;
-              const percentUsed = budgetAmount > 0 ? (spent / budgetAmount) * 100 : 0;
-              const isWarning = percentUsed > 75;
-              const isOver = percentUsed > 100;
+        {/* Alert: Product Launch */}
+        <div style={{ padding: '1rem 1.25rem', background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.4)', borderRadius: '10px', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <p style={{ margin: '0 0 2px 0', color: '#C9A84C', fontWeight: '700', fontSize: '14px' }}>🚀 Product Launch Sprint Active</p>
+            <p style={{ margin: 0, color: 'rgba(255,255,255,0.6)', fontSize: '13px' }}>5 products launched April 10–11 • Promos go live April 14 • Revenue pipeline open</p>
+          </div>
+          <Link href="/domination" style={{ padding: '8px 16px', borderRadius: '8px', background: '#C9A84C', color: '#1A1A2E', fontWeight: '700', fontSize: '12px', textDecoration: 'none', whiteSpace: 'nowrap' }}>View Plan →</Link>
+        </div>
 
-              return (
-                <div key={division} style={{
-                  padding: '1rem',
-                  backgroundColor: '#f9f9f9',
-                  borderRadius: '6px',
-                  borderLeft: `3px solid ${isOver ? '#C1121F' : isWarning ? '#EF9F27' : '#2A9D8F'}`
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                    <span style={{ fontWeight: '600', color: '#1A1A2E' }}>{division}</span>
-                    <span style={{ fontSize: '12px', color: '#666' }}>
-                      ${spent.toLocaleString()} / ${budgetAmount.toLocaleString()}
-                    </span>
-                  </div>
-                  <div style={{
-                    width: '100%',
-                    height: '8px',
-                    backgroundColor: '#e0e0e0',
-                    borderRadius: '4px',
-                    overflow: 'hidden'
-                  }}>
-                    <div style={{
-                      width: `${Math.min(percentUsed, 100)}%`,
-                      height: '100%',
-                      backgroundColor: isOver ? '#C1121F' : isWarning ? '#EF9F27' : '#2A9D8F',
-                      transition: 'width 0.3s'
-                    }} />
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '11px' }}>
-                    <span style={{ color: '#666' }}>{percentUsed.toFixed(1)}% used</span>
-                    <span style={{ color: isOver ? '#C1121F' : '#666' }}>
-                      {isOver ? `Over by $${(spent - budgetAmount).toLocaleString()}` : `$${Math.max(0, budgetAmount - spent).toLocaleString()} remaining`}
-                    </span>
-                  </div>
+        {/* KPIs */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '2rem' }}>
+          <MetricCard label="Monthly Budget" value={`$${totalBudget.toLocaleString()}`} sub="Across all divisions" color="#C9A84C" icon="📊" />
+          <MetricCard label="Total Revenue" value={`$${totalRevenue.toLocaleString()}`} sub="All products & services" color="#2A9D8F" icon="💰" />
+          <MetricCard label="Total Expenses" value={`$${totalSpent.toLocaleString()}`} sub={`${totalBudget > 0 ? ((totalSpent/totalBudget)*100).toFixed(0) : 0}% of budget`} color="#C1121F" icon="📝" />
+          <MetricCard label="Net Cash Flow" value={`${netCashFlow >= 0 ? '+' : ''}$${netCashFlow.toLocaleString()}`} sub="Revenue minus expenses" color={netCashFlow >= 0 ? '#2A9D8F' : '#C1121F'} icon="📈" />
+        </div>
+
+        {/* AI Insight */}
+        <div style={{ ...card, marginBottom: '2rem', borderColor: 'rgba(155,93,229,0.4)', background: 'rgba(155,93,229,0.06)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: aiInsight ? '1rem' : 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '1.1rem' }}>🤖</span>
+              <p style={{ margin: 0, color: '#9B5DE5', fontSize: '14px', fontWeight: '600' }}>AI Financial Insight</p>
+            </div>
+            <button className="btn-primary" onClick={getAIInsight} disabled={loadingInsight}
+              style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: 'rgba(155,93,229,0.3)', color: '#9B5DE5', fontWeight: '600', fontSize: '12px', cursor: loadingInsight ? 'not-allowed' : 'pointer' }}>
+              {loadingInsight ? 'Thinking...' : aiInsight ? 'Refresh' : 'Get Insight'}
+            </button>
+          </div>
+          {aiInsight && <p style={{ margin: 0, color: 'rgba(255,255,255,0.75)', fontSize: '14px', lineHeight: '1.7' }}>{aiInsight}</p>}
+          {!aiInsight && !loadingInsight && <p style={{ margin: '0.75rem 0 0 0', color: 'rgba(255,255,255,0.3)', fontSize: '13px' }}>Click "Get Insight" for an AI analysis of your current financial position.</p>}
+        </div>
+
+        {/* Live Products */}
+        <div style={{ ...card, marginBottom: '2rem' }}>
+          <h3 style={{ margin: '0 0 1.25rem 0', color: '#fff', fontSize: '16px', fontWeight: '600' }}>🛒 Live Products</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.75rem' }}>
+            {LIVE_PRODUCTS.map(p => (
+              <div key={p.name} style={{ padding: '1rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '8px' }}>
+                <p style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#fff', fontWeight: '600' }}>{p.name}</p>
+                <p style={{ margin: '0 0 8px 0', fontSize: '18px', fontWeight: '700', color: '#C9A84C' }}>${p.price}</p>
+                <p style={{ margin: 0, fontSize: '10px', color: 'rgba(255,255,255,0.3)', wordBreak: 'break-all' }}>{p.url}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Quick Nav */}
+        <h3 style={{ margin: '0 0 1rem 0', color: '#fff', fontSize: '16px', fontWeight: '600' }}>Quick Access</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem' }}>
+          {QUICK_LINKS.map(l => (
+            <Link key={l.href} href={l.href} style={{ textDecoration: 'none' }}>
+              <div className="card-hover" style={{ ...card, display: 'flex', alignItems: 'center', gap: '1rem', cursor: 'pointer' }}>
+                <span style={{ fontSize: '1.5rem' }}>{l.icon}</span>
+                <div>
+                  <p style={{ margin: 0, color: '#fff', fontSize: '14px', fontWeight: '600' }}>{l.label}</p>
+                  <p style={{ margin: 0, color: 'rgba(255,255,255,0.4)', fontSize: '12px' }}>{l.desc}</p>
                 </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Quick Actions */}
-        <div style={{
-          backgroundColor: '#fff',
-          border: '1px solid #e0e0e0',
-          borderRadius: '8px',
-          padding: '1.5rem',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
-        }}>
-          <h3 style={{ margin: '0 0 1.5rem 0', color: '#1A1A2E' }}>Quick Actions</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem' }}>
-            <Link href="/budgets" style={{
-              display: 'block',
-              padding: '1rem',
-              backgroundColor: '#1A1A2E',
-              color: '#C9A84C',
-              textDecoration: 'none',
-              borderRadius: '6px',
-              textAlign: 'center',
-              fontWeight: '600',
-              transition: 'all 0.2s',
-              cursor: 'pointer'
-            }}>
-              💰 Set Budgets
+              </div>
             </Link>
-            <Link href="/expenses" style={{
-              display: 'block',
-              padding: '1rem',
-              backgroundColor: '#1A1A2E',
-              color: '#C9A84C',
-              textDecoration: 'none',
-              borderRadius: '6px',
-              textAlign: 'center',
-              fontWeight: '600',
-              transition: 'all 0.2s',
-              cursor: 'pointer'
-            }}>
-              📝 Log Expense
-            </Link>
-            <Link href="/revenue" style={{
-              display: 'block',
-              padding: '1rem',
-              backgroundColor: '#1A1A2E',
-              color: '#C9A84C',
-              textDecoration: 'none',
-              borderRadius: '6px',
-              textAlign: 'center',
-              fontWeight: '600',
-              transition: 'all 0.2s',
-              cursor: 'pointer'
-            }}>
-              💹 Track Revenue
-            </Link>
-            <Link href="/reports" style={{
-              display: 'block',
-              padding: '1rem',
-              backgroundColor: '#1A1A2E',
-              color: '#C9A84C',
-              textDecoration: 'none',
-              borderRadius: '6px',
-              textAlign: 'center',
-              fontWeight: '600',
-              transition: 'all 0.2s',
-              cursor: 'pointer'
-            }}>
-              📄 View Reports
-            </Link>
-          </div>
+          ))}
         </div>
       </div>
     </Layout>
