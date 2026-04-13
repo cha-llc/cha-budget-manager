@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import getConfig from 'next/config';
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+
+    // Read from serverRuntimeConfig (baked in at build) or process.env fallback
+    const { serverRuntimeConfig } = getConfig() || {};
+    const apiKey = serverRuntimeConfig?.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY;
 
     if (!apiKey) {
       return NextResponse.json({ error: 'AI service not configured' }, { status: 500 });
