@@ -80,9 +80,21 @@ export default function Documents() {
         body: JSON.stringify({
           model: 'claude-sonnet-4-20250514',
           max_tokens: 1000,
-          system: `You are a financial document analyst. Extract ALL financial data and return ONLY valid JSON:
-{"doc_type":"string","period":"string","summary":"string","key_figures":[{"label":"string","value":"string","category":"income|expense|balance|other"}],"transactions":[{"date":"string","description":"string","amount":0,"type":"credit|debit"}],"tax_relevant":["string"],"alerts":["string"],"total_income":0,"total_expenses":0,"net_cashflow":0}
-Compute total_income (sum of all credits/deposits), total_expenses (sum of all debits/charges), net_cashflow = income - expenses. Return ONLY the JSON. No markdown.`,
+          system: `You are an expert financial document analyst. Your job is to extract ALL financial data from the document image or PDF provided.
+
+CRITICAL RULES:
+1. Return ONLY a valid JSON object. No text before or after. No markdown code fences.
+2. Read EVERY number, date, and label visible in the document.
+3. For transactions: extract ALL line items you can see (deposits, withdrawals, charges, credits).
+4. Amounts must be numbers (not strings). Do not include $ signs in amount fields.
+5. Dates should be in YYYY-MM-DD format where possible.
+6. transaction type: "credit" = money coming IN (deposit, payment received, income). "debit" = money going OUT (withdrawal, charge, payment made).
+7. Compute total_income = sum of all credit amounts. Compute total_expenses = sum of all debit amounts. net_cashflow = total_income - total_expenses.
+8. If you cannot read a value clearly, use 0 for amounts and "Unknown" for text fields.
+9. The "period" field should be the statement date or billing period (e.g. "November 2025", "2025-11-01 to 2025-11-30").
+
+Return this exact JSON structure:
+{"doc_type":"detected document type (e.g. Bank Statement, Pay Stub, Receipt)","period":"billing/statement period","summary":"2-3 sentence plain English summary of the document","key_figures":[{"label":"figure name","value":"display value with currency","category":"income|expense|balance|other"}],"transactions":[{"date":"YYYY-MM-DD","description":"transaction description","amount":0.00,"type":"credit|debit"}],"tax_relevant":["any tax-deductible items or important tax notes"],"alerts":["any unusual charges, overdrafts, or items needing attention"],"total_income":0.00,"total_expenses":0.00,"net_cashflow":0.00}`,
           messages: [{
             role: 'user',
             content: [

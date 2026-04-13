@@ -19,6 +19,7 @@ const navItems = [
   { href: '/networth', label: 'Net Worth', icon: '🏦', key: 'networth' },
   { href: '/analytics', label: 'Analytics', icon: '🔬', key: 'analytics' },
   { href: '/domination', label: 'Domination Plan', icon: '👑', key: 'domination' },
+  { href: '/personal-budget', label: 'Personal Budget', icon: '🧾', key: 'personal-budget' },
 ];
 
 export default function Layout({ children, activeTab = 'dashboard' }: LayoutProps) {

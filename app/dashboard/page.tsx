@@ -28,6 +28,25 @@ const QUICK_LINKS = [
 export default function Dashboard() {
   const { budgets, expenses, revenue, setBudgets, setExpenses, setRevenue } = useBudgetStore();
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState('');
+
+  const syncStripe = async () => {
+    setSyncing(true);
+    setSyncMsg('');
+    try {
+      const res = await fetch('/api/stripe-sync', { method: 'POST' });
+      const data = await res.json();
+      setSyncMsg(data.message || (data.error ? `Error: ${data.error}` : 'Sync complete'));
+      if (data.synced > 0) {
+        // Refresh revenue data
+        const { data: rev } = await (await import('@/lib/supabase')).supabase.from('revenue').select('*');
+        if (rev) setRevenue(rev as any);
+      }
+    } catch { setSyncMsg('Sync failed. Check Stripe connection.'); }
+    setSyncing(false);
+    setTimeout(() => setSyncMsg(''), 5000);
+  };
   const [aiInsight, setAiInsight] = useState('');
   const [loadingInsight, setLoadingInsight] = useState(false);
 
@@ -134,7 +153,16 @@ export default function Dashboard() {
 
         {/* Live Products */}
         <div style={{ ...card, marginBottom: '2rem' }}>
-          <h3 style={{ margin: '0 0 1.25rem 0', color: '#fff', fontSize: '16px', fontWeight: '600' }}>🛒 Live Products</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+            <h3 style={{ margin: 0, color: '#fff', fontSize: '16px', fontWeight: '600' }}>🛒 Live Products</h3>
+            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+              {syncMsg && <span style={{ fontSize: '12px', color: '#2A9D8F' }}>{syncMsg}</span>}
+              <button className="btn-primary" onClick={syncStripe} disabled={syncing}
+                style={{ padding: '7px 14px', borderRadius: '8px', border: '1px solid rgba(42,157,143,0.4)', background: 'transparent', color: '#2A9D8F', fontWeight: '600', fontSize: '12px', cursor: syncing ? 'not-allowed' : 'pointer' }}>
+                {syncing ? '⏳ Syncing...' : '🔄 Sync Stripe Sales'}
+              </button>
+            </div>
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.75rem' }}>
             {LIVE_PRODUCTS.map(p => (
               <div key={p.name} style={{ padding: '1rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '8px' }}>
