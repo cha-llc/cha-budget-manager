@@ -3,265 +3,482 @@
 import React, { useEffect, useState } from 'react';
 import Layout from '@/components/Layout';
 import { supabase } from '@/lib/supabase';
-import { useBudgetStore } from '@/lib/store';
 
 const card = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(201,168,76,0.2)', borderRadius: '12px', padding: '1.5rem' } as const;
 const DIVISIONS = ['Consulting', 'Tea Time Network', 'Digital Tools', 'Books'];
 
+const PERSONAL_DEFAULTS = [
+  { name: 'Housing / Rent', icon: '🏠', color: '#C1121F' },
+  { name: 'Food & Groceries', icon: '🛒', color: '#f4a261' },
+  { name: 'Transportation', icon: '✈️', color: '#2A9D8F' },
+  { name: 'Health & Wellness', icon: '💊', color: '#06d6a0' },
+  { name: 'Personal Care', icon: '🧴', color: '#9B5DE5' },
+  { name: 'Entertainment', icon: '🎬', color: '#C9A84C' },
+  { name: 'Savings', icon: '🏦', color: '#2A9D8F' },
+  { name: 'Emergency Fund', icon: '🛡️', color: '#3a86ff' },
+];
+
 export default function Budgets() {
-  const { budgets, expenses, setBudgets, setExpenses } = useBudgetStore();
-  const [form, setForm] = useState({ division: 'Consulting', monthly_budget: '' });
-  const [saving, setSaving] = useState(false);
-  const [showForm, setShowForm] = useState(false);
-  const [generating, setGenerating] = useState(false);
+  const [mode, setMode] = useState<'business' | 'personal'>('business');
+
+  // ── BUSINESS STATE ──
+  const [bizBudgets, setBizBudgets] = useState<any[]>([]);
+  const [bizExpenses, setBizExpenses] = useState<any[]>([]);
+  const [bizForm, setBizForm] = useState({ division: 'Consulting', monthly_budget: '' });
+  const [savingBiz, setSavingBiz] = useState(false);
+  const [showBizForm, setShowBizForm] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<any>(null);
+  const [generating, setGenerating] = useState(false);
+
+  // ── PERSONAL STATE ──
+  const [persCats, setPersCats] = useState<any[]>([]);
+  const [persTxs, setPersTxs] = useState<any[]>([]);
+  const [documents, setDocuments] = useState<any[]>([]);
+  const [showPersForm, setShowPersForm] = useState(false);
+  const [persForm, setPersForm] = useState({ name: '', budgeted_amount: '', icon: '💰', color: '#C9A84C', type: 'expense' });
+  const [importing, setImporting] = useState<string | null>(null);
+  const [importMsg, setImportMsg] = useState('');
+  const [buildingFromDocs, setBuildingFromDocs] = useState(false);
+  const [buildMsg, setBuildMsg] = useState('');
   const [exportMsg, setExportMsg] = useState('');
 
-  useEffect(() => {
-    const fetch = async () => {
-      const [br, er] = await Promise.all([
-        supabase.from('division_budgets').select('*'),
-        supabase.from('expenses').select('*'),
-      ]);
-      if (br.data) setBudgets(br.data as any);
-      if (er.data) setExpenses(er.data as any);
-    };
-    fetch();
-  }, []);
+  useEffect(() => { loadAll(); }, []);
 
-  const handleSave = async () => {
-    if (!form.monthly_budget) return;
-    setSaving(true);
-    try {
-      const { data } = await supabase
-        .from('division_budgets')
-        .upsert({ division: form.division, monthly_budget: parseFloat(form.monthly_budget) })
-        .select();
-      if (data) {
-        setBudgets(budgets.filter((b: any) => b.division !== form.division).concat(data as any));
-        setForm({ division: 'Consulting', monthly_budget: '' });
-        setShowForm(false);
-      }
-    } finally { setSaving(false); }
+  const loadAll = async () => {
+    const [br, er, cr, tr, dr] = await Promise.all([
+      supabase.from('division_budgets').select('*'),
+      supabase.from('expenses').select('*').order('date', { ascending: false }),
+      supabase.from('personal_budget_categories').select('*').order('type').order('name'),
+      supabase.from('personal_transactions').select('*').order('date', { ascending: false }),
+      supabase.from('budget_documents').select('*').order('uploaded_at', { ascending: false }),
+    ]);
+    if (br.data) setBizBudgets(br.data);
+    if (er.data) setBizExpenses(er.data);
+    if (cr.data) setPersCats(cr.data);
+    if (tr.data) setPersTxs(tr.data);
+    if (dr.data) setDocuments(dr.data);
+  };
+
+  // ── BUSINESS ACTIONS ──
+  const saveBizBudget = async () => {
+    if (!bizForm.monthly_budget) return;
+    setSavingBiz(true);
+    const { data } = await supabase.from('division_budgets')
+      .upsert({ division: bizForm.division, monthly_budget: parseFloat(bizForm.monthly_budget) }).select();
+    if (data) { setBizBudgets(bizBudgets.filter(b => b.division !== bizForm.division).concat(data)); setBizForm({ division: 'Consulting', monthly_budget: '' }); setShowBizForm(false); }
+    setSavingBiz(false);
   };
 
   const generateAIBudget = async () => {
-    setGenerating(true);
-    setAiSuggestions(null);
+    setGenerating(true); setAiSuggestions(null);
     try {
-      const spendingByDivision: Record<string, Record<string, number>> = {};
-      expenses.forEach((e: any) => {
-        if (!spendingByDivision[e.division]) spendingByDivision[e.division] = {};
-        spendingByDivision[e.division][e.category] = (spendingByDivision[e.division][e.category] || 0) + e.amount;
+      const spendByDiv: Record<string, Record<string, number>> = {};
+      bizExpenses.forEach(e => {
+        if (!spendByDiv[e.division]) spendByDiv[e.division] = {};
+        spendByDiv[e.division][e.category] = (spendByDiv[e.division][e.category] || 0) + parseFloat(e.amount || 0);
       });
       const res = await fetch('/api/ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1000,
-          system: 'You are a budget planning AI for a multi-division LLC. Return ONLY valid JSON: {"rationale":"string","division_budgets":[{"division":"string","suggested_budget":0,"current_budget":0,"reasoning":"string","category_limits":{"category":0}}],"total_recommended":0,"reallocation_notes":["string"],"growth_investment":["string"]}. No markdown.',
-          messages: [{ role: 'user', content: `Generate AI budget recommendations for C.H.A. LLC based on spending history. Divisions: ${DIVISIONS.join(', ')}. Current budgets: ${JSON.stringify(budgets)}. Spending history by division: ${JSON.stringify(spendingByDivision)}. The company just launched 5 products and is in growth mode targeting $100K net income in 12 months. Optimize for growth while controlling costs.` }]
+          model: 'claude-sonnet-4-20250514', max_tokens: 1000,
+          system: 'You are a budget planning AI for a multi-division LLC. Return ONLY valid JSON: {"rationale":"string","division_budgets":[{"division":"string","suggested_budget":0,"current_budget":0,"reasoning":"string"}],"total_recommended":0,"reallocation_notes":["string"],"growth_investment":["string"]}. No markdown.',
+          messages: [{ role: 'user', content: `Generate AI budget for C.H.A. LLC. Divisions: ${DIVISIONS.join(', ')}. Current budgets: ${JSON.stringify(bizBudgets)}. Spending: ${JSON.stringify(spendByDiv)}. Company in growth mode, just launched 5 products.` }]
         })
       });
       const data = await res.json();
       const text = data.content?.find((c: any) => c.type === 'text')?.text || '';
       setAiSuggestions(JSON.parse(text.replace(/```json|```/g, '').trim()));
-    } catch {
-      setAiSuggestions({ rationale: 'Could not generate recommendations.', division_budgets: [], total_recommended: 0, reallocation_notes: [], growth_investment: [] });
-    } finally { setGenerating(false); }
+    } catch { /* silent */ } finally { setGenerating(false); }
   };
 
   const applyAISuggestion = async (division: string, amount: number) => {
     const { data } = await supabase.from('division_budgets').upsert({ division, monthly_budget: amount }).select();
-    if (data) setBudgets(budgets.filter((b: any) => b.division !== division).concat(data as any));
+    if (data) setBizBudgets(bizBudgets.filter(b => b.division !== division).concat(data));
   };
 
-  const exportCSV = () => {
-    const rows = [['Division', 'Monthly Budget', 'Spent MTD', 'Remaining', 'Utilization %']];
+  const exportBizCSV = () => {
+    const rows = [['Division', 'Monthly Budget', 'Spent', 'Remaining', 'Utilization']];
     DIVISIONS.forEach(div => {
-      const b = budgets.find((b: any) => b.division === div);
-      const spent = expenses.filter((e: any) => e.division === div).reduce((s: number, e: any) => s + e.amount, 0);
-      const budget = b?.monthly_budget || 0;
-      rows.push([div, budget.toString(), spent.toFixed(2), Math.max(0, budget - spent).toFixed(2), budget > 0 ? ((spent / budget) * 100).toFixed(1) + '%' : '0%']);
+      const b = bizBudgets.find(b => b.division === div);
+      const spent = bizExpenses.filter(e => e.division === div).reduce((s, e) => s + parseFloat(e.amount || 0), 0);
+      const budget = parseFloat(b?.monthly_budget || 0);
+      rows.push([div, String(budget), spent.toFixed(2), Math.max(0, budget - spent).toFixed(2), budget > 0 ? ((spent / budget) * 100).toFixed(1) + '%' : '0%']);
     });
     const csv = rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `cha-budgets-${new Date().toISOString().slice(0,10)}.csv`; a.click();
-    setExportMsg('✅ CSV exported');
-    setTimeout(() => setExportMsg(''), 3000);
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = `cha-business-budget-${new Date().toISOString().slice(0,10)}.csv`; a.click();
+    setExportMsg('✅ Exported'); setTimeout(() => setExportMsg(''), 2500);
   };
 
-  const totalBudget = budgets.reduce((s: number, b: any) => s + b.monthly_budget, 0);
-  const totalSpent = expenses.reduce((s: number, e: any) => s + e.amount, 0);
-
-  const getDivisionData = (div: string) => {
-    const b = budgets.find((b: any) => b.division === div);
-    const spent = expenses.filter((e: any) => e.division === div).reduce((s: number, e: any) => s + e.amount, 0);
-    const budget = b?.monthly_budget || 0;
-    const pct = budget > 0 ? (spent / budget) * 100 : 0;
-    const status = pct > 90 ? 'critical' : pct > 70 ? 'warning' : 'good';
-    const color = status === 'critical' ? '#C1121F' : status === 'warning' ? '#C9A84C' : '#2A9D8F';
-    return { budget, spent, remaining: Math.max(0, budget - spent), pct: Math.min(100, pct), color, status };
+  // ── PERSONAL ACTIONS ──
+  const addPersCat = async () => {
+    if (!persForm.name) return;
+    const { data } = await supabase.from('personal_budget_categories').insert([{
+      name: persForm.name, type: persForm.type,
+      budgeted_amount: parseFloat(persForm.budgeted_amount) || 0,
+      icon: persForm.icon, color: persForm.color,
+    }]).select();
+    if (data) { setPersCats([...persCats, data[0]]); setPersForm({ name: '', budgeted_amount: '', icon: '💰', color: '#C9A84C', type: 'expense' }); setShowPersForm(false); }
   };
+
+  const updatePersCatBudget = async (id: string, amount: number) => {
+    await supabase.from('personal_budget_categories').update({ budgeted_amount: amount }).eq('id', id);
+    setPersCats(persCats.map(c => c.id === id ? { ...c, budgeted_amount: amount } : c));
+  };
+
+  // Import transactions from a document into personal budget
+  const importDocToPersonal = async (doc: any) => {
+    setImporting(doc.id); setImportMsg('');
+    try {
+      const txs = doc.transactions || [];
+      if (!txs.length) { setImportMsg('No transactions found in this document.'); setImporting(null); return; }
+      const { data } = await supabase.from('personal_transactions').insert(
+        txs.map((tx: any) => ({
+          description: tx.description || 'Imported',
+          amount: Math.abs(parseFloat(tx.amount) || 0),
+          type: tx.type === 'credit' ? 'income' : 'expense',
+          category_name: tx.type === 'credit' ? 'Other Income' : 'Uncategorized',
+          date: tx.date || doc.uploaded_at?.split('T')[0] || new Date().toISOString().split('T')[0],
+          source: `document:${doc.file_name}`,
+          source_doc_id: doc.id,
+        }))
+      ).select();
+      if (data) {
+        setPersTxs(prev => [...data, ...prev]);
+        await supabase.from('budget_documents').update({ budget_type: 'both' }).eq('id', doc.id);
+        setImportMsg(`✅ Imported ${data.length} transactions from "${doc.file_name}" into your personal budget`);
+      }
+    } catch { setImportMsg('Import failed.'); }
+    setImporting(null);
+    setTimeout(() => setImportMsg(''), 6000);
+  };
+
+  // Build a full personal budget from ALL uploaded documents via AI
+  const buildPersonalBudgetFromDocs = async () => {
+    if (!documents.length) { setBuildMsg('No documents uploaded yet. Go to Document Intelligence first.'); return; }
+    setBuildingFromDocs(true); setBuildMsg('');
+    try {
+      const allTxs = documents.flatMap(d => (d.transactions || []).map((t: any) => ({ ...t, doc: d.file_name, period: d.period })));
+      const totalIncome = documents.reduce((s, d) => s + parseFloat(d.total_income || 0), 0);
+      const totalExpenses = documents.reduce((s, d) => s + parseFloat(d.total_expenses || 0), 0);
+      const res = await fetch('/api/ai', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514', max_tokens: 1000,
+          system: 'You are a personal finance AI. Return ONLY valid JSON: {"summary":"string","category_budgets":[{"name":"string","type":"income|expense","suggested_amount":0,"icon":"emoji","reasoning":"string"}],"monthly_income_estimate":0,"monthly_expense_estimate":0,"savings_rate":"string","insights":["string"]}. Base it strictly on the actual document data provided. No markdown.',
+          messages: [{ role: 'user', content: `Build a personal budget from these uploaded financial documents. Total income across all docs: $${totalIncome.toFixed(2)}. Total expenses: $${totalExpenses.toFixed(2)}. Transactions sample: ${JSON.stringify(allTxs.slice(0, 40))}. Documents: ${documents.length} total. Create realistic monthly budget categories based on the actual spending patterns visible in the data.` }]
+        })
+      });
+      const data = await res.json();
+      const text = data.content?.find((c: any) => c.type === 'text')?.text || '';
+      const result = JSON.parse(text.replace(/```json|```/g, '').trim());
+
+      // Upsert each suggested category
+      let added = 0;
+      for (const cat of result.category_budgets || []) {
+        const existing = persCats.find(c => c.name.toLowerCase() === cat.name.toLowerCase());
+        if (existing) {
+          await supabase.from('personal_budget_categories').update({ budgeted_amount: cat.suggested_amount }).eq('id', existing.id);
+        } else {
+          await supabase.from('personal_budget_categories').insert([{
+            name: cat.name, type: cat.type,
+            budgeted_amount: cat.suggested_amount,
+            icon: cat.icon || '💰', color: cat.type === 'income' ? '#2A9D8F' : '#C9A84C',
+          }]);
+          added++;
+        }
+      }
+      await loadAll();
+      setBuildMsg(`✅ Personal budget built from ${documents.length} document${documents.length !== 1 ? 's' : ''}. ${added} new categories created. ${result.summary}`);
+    } catch (e: any) {
+      setBuildMsg('Could not build budget. Make sure you have uploaded documents first.');
+    } finally { setBuildingFromDocs(false); }
+  };
+
+  // ── COMPUTED ──
+  const getBizDivData = (div: string) => {
+    const b = bizBudgets.find(b => b.division === div);
+    const spent = bizExpenses.filter(e => e.division === div).reduce((s, e) => s + parseFloat(e.amount || 0), 0);
+    const budget = parseFloat(b?.monthly_budget || 0);
+    const pct = budget > 0 ? Math.min(100, (spent / budget) * 100) : 0;
+    const color = pct > 90 ? '#C1121F' : pct > 70 ? '#C9A84C' : '#2A9D8F';
+    return { budget, spent, remaining: Math.max(0, budget - spent), pct, color, status: pct > 90 ? '🔴 Over Budget' : pct > 70 ? '🟡 Watch' : '🟢 On Track' };
+  };
+
+  const totalBizBudget = bizBudgets.reduce((s, b) => s + parseFloat(b.monthly_budget || 0), 0);
+  const totalBizSpent = bizExpenses.reduce((s, e) => s + parseFloat(e.amount || 0), 0);
+
+  const spendByPersCat: Record<string, number> = {};
+  persTxs.filter(t => t.type === 'expense').forEach(t => { spendByPersCat[t.category_name] = (spendByPersCat[t.category_name] || 0) + parseFloat(t.amount || 0); });
+  const totalPersIncome = persTxs.filter(t => t.type === 'income').reduce((s, t) => s + parseFloat(t.amount || 0), 0);
+  const totalPersExpenses = persTxs.filter(t => t.type === 'expense').reduce((s, t) => s + parseFloat(t.amount || 0), 0);
+  const totalPersBudgeted = persCats.filter(c => c.type === 'expense').reduce((s, c) => s + parseFloat(c.budgeted_amount || 0), 0);
 
   return (
     <Layout activeTab="budgets">
       <div style={{ maxWidth: '1200px' }}>
+
+        {/* Header + Mode Toggle */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2rem' }}>
           <div>
             <h2 style={{ margin: '0 0 6px 0', color: '#fff', fontSize: '22px', fontWeight: '700', fontFamily: "'Lora', serif" }}>Budget Management</h2>
-            <p style={{ margin: 0, color: 'rgba(255,255,255,0.5)', fontSize: '14px' }}>AI-generated budgets from spending history</p>
+            <p style={{ margin: 0, color: 'rgba(255,255,255,0.5)', fontSize: '14px' }}>
+              {mode === 'business' ? 'C.H.A. LLC business budgets across all four divisions' : 'Your personal budget — separate from business, built from your documents'}
+            </p>
           </div>
-          <div style={{ display: 'flex', gap: '0.75rem' }}>
-            <button className="btn-primary" onClick={exportCSV} style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid rgba(201,168,76,0.4)', background: 'transparent', color: '#C9A84C', fontWeight: '600', fontSize: '13px', cursor: 'pointer' }}>
-              📥 Export CSV
-            </button>
-            <button className="btn-primary" onClick={generateAIBudget} disabled={generating}
-              style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #9B5DE5, #2A9D8F)', color: '#fff', fontWeight: '600', fontSize: '13px', cursor: 'pointer' }}>
-              {generating ? '🤖 Generating...' : '🤖 Generate AI Budgets'}
-            </button>
-            <button className="btn-primary" onClick={() => setShowForm(!showForm)}
-              style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', background: '#C9A84C', color: '#1A1A2E', fontWeight: '700', fontSize: '13px', cursor: 'pointer' }}>
-              + Set Budget
-            </button>
+          <div style={{ display: 'flex', gap: '4px', background: 'rgba(255,255,255,0.06)', borderRadius: '10px', padding: '4px' }}>
+            {(['business', 'personal'] as const).map(m => (
+              <button key={m} onClick={() => setMode(m)} style={{
+                padding: '10px 22px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+                background: mode === m ? (m === 'business' ? '#C9A84C' : '#9B5DE5') : 'transparent',
+                color: mode === m ? (m === 'business' ? '#1A1A2E' : '#fff') : 'rgba(255,255,255,0.5)',
+                fontWeight: mode === m ? '700' : '400', fontSize: '13px', fontFamily: 'Poppins,sans-serif',
+                transition: 'all 0.2s',
+              }}>
+                {m === 'business' ? '🏢 Business Budget' : '🧾 Personal Budget'}
+              </button>
+            ))}
           </div>
         </div>
 
-        {exportMsg && <div style={{ padding: '10px 14px', background: 'rgba(42,157,143,0.15)', border: '1px solid rgba(42,157,143,0.4)', borderRadius: '8px', color: '#2A9D8F', fontSize: '13px', marginBottom: '1rem' }}>{exportMsg}</div>}
-
-        {/* Summary */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
-          {[
-            { label: 'Total Monthly Budget', value: `$${totalBudget.toLocaleString()}`, color: '#C9A84C' },
-            { label: 'Total Spent (All Time)', value: `$${totalSpent.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#C1121F' },
-            { label: 'Budget Utilization', value: totalBudget > 0 ? `${((totalSpent / totalBudget) * 100).toFixed(0)}%` : '0%', color: '#2A9D8F' },
-          ].map(m => (
-            <div key={m.label} className="card-hover" style={card}>
-              <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{m.label}</p>
-              <p style={{ margin: '6px 0 0 0', fontSize: '28px', fontWeight: '700', color: m.color }}>{m.value}</p>
+        {/* ═══════════════════════════════════════ BUSINESS MODE ═══════════════════════════════════════ */}
+        {mode === 'business' && (
+          <div>
+            {/* Summary */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
+              {[
+                { label: 'Total Monthly Budget', value: `$${totalBizBudget.toLocaleString()}`, color: '#C9A84C' },
+                { label: 'Total Expenses', value: `$${totalBizSpent.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#C1121F' },
+                { label: 'Budget Utilization', value: totalBizBudget > 0 ? `${((totalBizSpent / totalBizBudget) * 100).toFixed(0)}%` : '0%', color: '#2A9D8F' },
+              ].map(m => (
+                <div key={m.label} className="card-hover" style={card}>
+                  <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{m.label}</p>
+                  <p style={{ margin: '6px 0 0 0', fontSize: '28px', fontWeight: '700', color: m.color }}>{m.value}</p>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
 
-        {/* Add Form */}
-        {showForm && (
-          <div style={{ ...card, marginBottom: '1.5rem', borderColor: 'rgba(201,168,76,0.5)' }}>
-            <h3 style={{ margin: '0 0 1.25rem 0', color: '#C9A84C', fontSize: '15px', fontWeight: '600' }}>Set Division Budget</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '1rem', alignItems: 'flex-end' }}>
-              <div><label>Division</label><select value={form.division} onChange={e => setForm({ ...form, division: e.target.value })}>{DIVISIONS.map(d => <option key={d}>{d}</option>)}</select></div>
-              <div><label>Monthly Budget ($)</label><input type="number" value={form.monthly_budget} onChange={e => setForm({ ...form, monthly_budget: e.target.value })} placeholder="5000" /></div>
-              <div style={{ display: 'flex', gap: '0.75rem' }}>
-                <button className="btn-primary" onClick={handleSave} disabled={saving}
-                  style={{ padding: '10px 20px', borderRadius: '8px', border: 'none', background: '#C9A84C', color: '#1A1A2E', fontWeight: '700', cursor: 'pointer', whiteSpace: 'nowrap' }}>{saving ? 'Saving...' : 'Save'}</button>
-                <button onClick={() => setShowForm(false)} style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.2)', background: 'transparent', color: 'rgba(255,255,255,0.6)', cursor: 'pointer' }}>Cancel</button>
+            {/* Action buttons */}
+            <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+              {exportMsg && <span style={{ color: '#2A9D8F', fontSize: '13px', alignSelf: 'center' }}>{exportMsg}</span>}
+              <button className="btn-primary" onClick={exportBizCSV} style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid rgba(201,168,76,0.4)', background: 'transparent', color: '#C9A84C', fontWeight: '600', fontSize: '13px', cursor: 'pointer' }}>📥 Export CSV</button>
+              <button className="btn-primary" onClick={generateAIBudget} disabled={generating} style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #9B5DE5, #2A9D8F)', color: '#fff', fontWeight: '600', fontSize: '13px', cursor: 'pointer' }}>
+                {generating ? '🤖 Generating...' : '🤖 AI Generate Budgets'}
+              </button>
+              <button className="btn-primary" onClick={() => setShowBizForm(!showBizForm)} style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', background: '#C9A84C', color: '#1A1A2E', fontWeight: '700', fontSize: '13px', cursor: 'pointer' }}>+ Set Budget</button>
+            </div>
+
+            {/* Set Budget Form */}
+            {showBizForm && (
+              <div style={{ ...card, marginBottom: '1.5rem', borderColor: 'rgba(201,168,76,0.5)' }}>
+                <h3 style={{ margin: '0 0 1.25rem 0', color: '#C9A84C', fontSize: '15px', fontWeight: '600' }}>Set Division Budget</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '1rem', alignItems: 'flex-end' }}>
+                  <div><label>Division</label><select value={bizForm.division} onChange={e => setBizForm({ ...bizForm, division: e.target.value })}>{DIVISIONS.map(d => <option key={d}>{d}</option>)}</select></div>
+                  <div><label>Monthly Budget ($)</label><input type="number" value={bizForm.monthly_budget} onChange={e => setBizForm({ ...bizForm, monthly_budget: e.target.value })} placeholder="5000" /></div>
+                  <div style={{ display: 'flex', gap: '0.75rem' }}>
+                    <button className="btn-primary" onClick={saveBizBudget} disabled={savingBiz} style={{ padding: '10px 20px', borderRadius: '8px', border: 'none', background: '#C9A84C', color: '#1A1A2E', fontWeight: '700', cursor: 'pointer', fontFamily: 'Poppins,sans-serif' }}>{savingBiz ? 'Saving...' : 'Save'}</button>
+                    <button onClick={() => setShowBizForm(false)} style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.2)', background: 'transparent', color: 'rgba(255,255,255,0.6)', cursor: 'pointer' }}>Cancel</button>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-        )}
+            )}
 
-        {/* Division Budget Cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
-          {DIVISIONS.map(div => {
-            const d = getDivisionData(div);
-            return (
-              <div key={div} className="card-hover" style={{ ...card, borderLeft: `3px solid ${d.color}` }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                  <div>
-                    <h3 style={{ margin: 0, color: '#fff', fontSize: '16px', fontWeight: '600' }}>{div}</h3>
-                    <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '20px', background: `${d.color}20`, color: d.color, fontWeight: '600' }}>
-                      {d.status === 'critical' ? '🔴 Over Budget' : d.status === 'warning' ? '🟡 Watch' : '🟢 On Track'}
-                    </span>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <p style={{ margin: 0, fontSize: '22px', fontWeight: '700', color: d.color }}>{d.pct.toFixed(0)}%</p>
-                    <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.35)' }}>utilized</p>
-                  </div>
-                </div>
-                {/* Progress */}
-                <div style={{ background: 'rgba(255,255,255,0.07)', borderRadius: '4px', height: '8px', marginBottom: '1rem', overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${d.pct}%`, background: d.color, borderRadius: '4px', transition: 'width 0.5s ease' }} />
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
-                  {[
-                    { label: 'Budget', value: `$${d.budget.toLocaleString()}`, color: '#C9A84C' },
-                    { label: 'Spent', value: `$${d.spent.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#C1121F' },
-                    { label: 'Remaining', value: `$${d.remaining.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#2A9D8F' },
-                  ].map(m => (
-                    <div key={m.label} style={{ textAlign: 'center', padding: '0.5rem', background: 'rgba(255,255,255,0.03)', borderRadius: '6px' }}>
-                      <p style={{ margin: 0, fontSize: '10px', color: 'rgba(255,255,255,0.35)' }}>{m.label}</p>
-                      <p style={{ margin: '2px 0 0 0', fontSize: '14px', fontWeight: '700', color: m.color }}>{m.value}</p>
+            {/* Division Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
+              {DIVISIONS.map(div => {
+                const d = getBizDivData(div);
+                return (
+                  <div key={div} className="card-hover" style={{ ...card, borderLeft: `3px solid ${d.color}` }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
+                      <div>
+                        <h3 style={{ margin: 0, color: '#fff', fontSize: '16px', fontWeight: '600' }}>{div}</h3>
+                        <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '20px', background: `${d.color}20`, color: d.color, fontWeight: '600' }}>{d.status}</span>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <p style={{ margin: 0, fontSize: '22px', fontWeight: '700', color: d.color }}>{d.pct.toFixed(0)}%</p>
+                        <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.35)' }}>utilized</p>
+                      </div>
                     </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* AI Budget Recommendations */}
-        {generating && (
-          <div style={{ ...card, textAlign: 'center', padding: '3rem' }}>
-            <div style={{ fontSize: '2rem', marginBottom: '0.75rem' }}>🤖</div>
-            <p style={{ color: '#9B5DE5', fontWeight: '600', margin: '0 0 4px 0' }}>AI is analyzing your spending history...</p>
-            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '13px', margin: 0 }}>Building optimized budget recommendations for growth</p>
-          </div>
-        )}
-
-        {aiSuggestions && (
-          <div style={card}>
-            <h3 style={{ margin: '0 0 1.25rem 0', color: '#9B5DE5', fontSize: '16px', fontWeight: '600' }}>🤖 AI Budget Recommendations</h3>
-            <div style={{ padding: '1rem 1.25rem', background: 'rgba(155,93,229,0.08)', border: '1px solid rgba(155,93,229,0.25)', borderRadius: '8px', marginBottom: '1.25rem' }}>
-              <p style={{ margin: 0, color: 'rgba(255,255,255,0.8)', fontSize: '14px', lineHeight: '1.7' }}>{aiSuggestions.rationale}</p>
+                    <div style={{ background: 'rgba(255,255,255,0.07)', borderRadius: '4px', height: '8px', marginBottom: '1rem', overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${d.pct}%`, background: d.color, borderRadius: '4px', transition: 'width 0.5s ease' }} />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
+                      {[{ label: 'Budget', value: `$${d.budget.toLocaleString()}`, color: '#C9A84C' }, { label: 'Spent', value: `$${d.spent.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#C1121F' }, { label: 'Remaining', value: `$${d.remaining.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#2A9D8F' }].map(m => (
+                        <div key={m.label} style={{ textAlign: 'center', padding: '0.5rem', background: 'rgba(255,255,255,0.03)', borderRadius: '6px' }}>
+                          <p style={{ margin: 0, fontSize: '10px', color: 'rgba(255,255,255,0.35)' }}>{m.label}</p>
+                          <p style={{ margin: '2px 0 0 0', fontSize: '14px', fontWeight: '700', color: m.color }}>{m.value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
-            {aiSuggestions.division_budgets?.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.25rem' }}>
-                {aiSuggestions.division_budgets.map((d: any) => (
-                  <div key={d.division} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.25rem', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.07)' }}>
-                    <div style={{ flex: 1 }}>
-                      <p style={{ margin: '0 0 2px 0', color: '#fff', fontWeight: '600', fontSize: '14px' }}>{d.division}</p>
-                      <p style={{ margin: 0, color: 'rgba(255,255,255,0.5)', fontSize: '12px' }}>{d.reasoning}</p>
+            {/* AI Suggestions */}
+            {generating && <div style={{ ...card, textAlign: 'center', padding: '2.5rem' }}><p style={{ color: '#9B5DE5', fontWeight: '600', margin: 0 }}>🤖 Analyzing spending history and generating optimized budgets...</p></div>}
+            {aiSuggestions && (
+              <div style={card}>
+                <h3 style={{ margin: '0 0 1rem 0', color: '#9B5DE5', fontSize: '16px', fontWeight: '600' }}>🤖 AI Budget Recommendations</h3>
+                <div style={{ padding: '0.75rem 1rem', background: 'rgba(155,93,229,0.08)', border: '1px solid rgba(155,93,229,0.2)', borderRadius: '8px', marginBottom: '1rem' }}>
+                  <p style={{ margin: 0, color: 'rgba(255,255,255,0.75)', fontSize: '13px', lineHeight: '1.6' }}>{aiSuggestions.rationale}</p>
+                </div>
+                {aiSuggestions.division_budgets?.map((d: any) => (
+                  <div key={d.division} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.85rem 1rem', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', marginBottom: '0.5rem' }}>
+                    <div>
+                      <p style={{ margin: 0, color: '#fff', fontWeight: '600', fontSize: '14px' }}>{d.division}</p>
+                      <p style={{ margin: 0, color: 'rgba(255,255,255,0.45)', fontSize: '12px' }}>{d.reasoning}</p>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexShrink: 0 }}>
                       <div style={{ textAlign: 'right' }}>
-                        <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.35)' }}>Current</p>
-                        <p style={{ margin: 0, fontSize: '14px', color: 'rgba(255,255,255,0.5)' }}>${(d.current_budget || 0).toLocaleString()}</p>
-                      </div>
-                      <div style={{ fontSize: '18px', color: 'rgba(255,255,255,0.2)' }}>→</div>
-                      <div style={{ textAlign: 'right' }}>
-                        <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.35)' }}>AI Suggestion</p>
-                        <p style={{ margin: 0, fontSize: '18px', fontWeight: '700', color: '#9B5DE5' }}>${d.suggested_budget.toLocaleString()}</p>
+                        <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.35)' }}>Suggested</p>
+                        <p style={{ margin: 0, fontSize: '18px', fontWeight: '700', color: '#9B5DE5' }}>${d.suggested_budget?.toLocaleString()}</p>
                       </div>
                       <button className="btn-primary" onClick={() => applyAISuggestion(d.division, d.suggested_budget)}
-                        style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: 'rgba(155,93,229,0.3)', color: '#9B5DE5', fontWeight: '600', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                        Apply
-                      </button>
+                        style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: 'rgba(155,93,229,0.25)', color: '#9B5DE5', fontWeight: '600', fontSize: '12px', cursor: 'pointer', fontFamily: 'Poppins,sans-serif' }}>Apply</button>
                     </div>
                   </div>
                 ))}
               </div>
             )}
+          </div>
+        )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+        {/* ═══════════════════════════════════════ PERSONAL MODE ═══════════════════════════════════════ */}
+        {mode === 'personal' && (
+          <div>
+            {/* Personal KPIs */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
               {[
-                { label: '🔄 Reallocation Notes', items: aiSuggestions.reallocation_notes, color: '#C9A84C' },
-                { label: '📈 Growth Investments', items: aiSuggestions.growth_investment, color: '#2A9D8F' },
-              ].map(s => (
-                <div key={s.label} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '1rem' }}>
-                  <p style={{ margin: '0 0 0.75rem 0', color: s.color, fontSize: '13px', fontWeight: '600' }}>{s.label}</p>
-                  {s.items?.map((item: string, i: number) => <p key={i} style={{ margin: i === 0 ? 0 : '6px 0 0 0', color: 'rgba(255,255,255,0.6)', fontSize: '12px', lineHeight: '1.5' }}>• {item}</p>)}
+                { label: 'Personal Income', value: `$${totalPersIncome.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#2A9D8F' },
+                { label: 'Personal Expenses', value: `$${totalPersExpenses.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#C1121F' },
+                { label: 'Net Personal', value: `${(totalPersIncome - totalPersExpenses) >= 0 ? '+' : ''}$${Math.abs(totalPersIncome - totalPersExpenses).toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: totalPersIncome >= totalPersExpenses ? '#2A9D8F' : '#C1121F' },
+                { label: 'Total Budgeted', value: `$${totalPersBudgeted.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#9B5DE5' },
+              ].map(m => (
+                <div key={m.label} className="card-hover" style={card}>
+                  <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{m.label}</p>
+                  <p style={{ margin: '6px 0 0 0', fontSize: '22px', fontWeight: '700', color: m.color }}>{m.value}</p>
                 </div>
               ))}
             </div>
 
-            {aiSuggestions.total_recommended > 0 && (
-              <div style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(201,168,76,0.08)', border: '1px solid rgba(201,168,76,0.25)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <p style={{ margin: 0, color: 'rgba(255,255,255,0.6)', fontSize: '13px' }}>AI Recommended Total Monthly Budget</p>
-                <p style={{ margin: 0, fontSize: '22px', fontWeight: '700', color: '#C9A84C' }}>${aiSuggestions.total_recommended.toLocaleString()}</p>
+            {/* Build from Documents — the main feature */}
+            <div style={{ ...card, marginBottom: '1.5rem', borderColor: 'rgba(155,93,229,0.4)', background: 'rgba(155,93,229,0.05)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
+                <div>
+                  <h3 style={{ margin: '0 0 4px 0', color: '#9B5DE5', fontSize: '16px', fontWeight: '700' }}>📄 Build Personal Budget from Your Documents</h3>
+                  <p style={{ margin: 0, color: 'rgba(255,255,255,0.5)', fontSize: '13px' }}>
+                    AI analyzes your {documents.length} uploaded document{documents.length !== 1 ? 's' : ''} and creates a personal budget based on your actual spending patterns
+                  </p>
+                </div>
+                <button className="btn-primary" onClick={buildPersonalBudgetFromDocs} disabled={buildingFromDocs || documents.length === 0}
+                  style={{ padding: '12px 24px', borderRadius: '8px', border: 'none', background: buildingFromDocs || documents.length === 0 ? 'rgba(255,255,255,0.08)' : 'linear-gradient(135deg, #9B5DE5, #2A9D8F)', color: buildingFromDocs || documents.length === 0 ? 'rgba(255,255,255,0.3)' : '#fff', fontWeight: '700', fontSize: '13px', cursor: buildingFromDocs || documents.length === 0 ? 'not-allowed' : 'pointer', fontFamily: 'Poppins,sans-serif', whiteSpace: 'nowrap' }}>
+                  {buildingFromDocs ? '🔮 Building...' : documents.length === 0 ? 'Upload Docs First' : `🔮 Build from ${documents.length} Doc${documents.length !== 1 ? 's' : ''}`}
+                </button>
+              </div>
+              {buildMsg && (
+                <div style={{ padding: '10px 14px', background: buildMsg.startsWith('✅') ? 'rgba(42,157,143,0.12)' : 'rgba(193,18,31,0.12)', border: `1px solid ${buildMsg.startsWith('✅') ? 'rgba(42,157,143,0.35)' : 'rgba(193,18,31,0.35)'}`, borderRadius: '8px', color: buildMsg.startsWith('✅') ? '#2A9D8F' : '#ff6b6b', fontSize: '13px', lineHeight: '1.5' }}>
+                  {buildMsg}
+                </div>
+              )}
+              {documents.length === 0 && (
+                <p style={{ margin: '0.75rem 0 0 0', color: 'rgba(255,255,255,0.3)', fontSize: '12px' }}>
+                  No documents yet — go to <strong style={{ color: '#C9A84C' }}>Document Intelligence</strong> to upload bank statements or pay stubs first.
+                </p>
+              )}
+            </div>
+
+            {/* Import individual document */}
+            {documents.length > 0 && (
+              <div style={{ ...card, marginBottom: '1.5rem' }}>
+                <h3 style={{ margin: '0 0 1rem 0', color: '#fff', fontSize: '15px', fontWeight: '600' }}>📥 Import Transactions from a Specific Document</h3>
+                {importMsg && <div style={{ padding: '10px 14px', background: 'rgba(42,157,143,0.1)', border: '1px solid rgba(42,157,143,0.3)', borderRadius: '8px', color: '#2A9D8F', fontSize: '13px', marginBottom: '1rem' }}>{importMsg}</div>}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                  {documents.map(doc => {
+                    const txCount = (doc.transactions || []).length;
+                    const imported = doc.budget_type === 'both' || doc.budget_type === 'personal';
+                    return (
+                      <div key={doc.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: '1rem', alignItems: 'center', padding: '0.85rem 1rem', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                        <div>
+                          <p style={{ margin: 0, color: '#fff', fontWeight: '500', fontSize: '13px' }}>{doc.file_name}</p>
+                          <p style={{ margin: 0, color: 'rgba(255,255,255,0.35)', fontSize: '11px' }}>{doc.doc_type}{doc.period ? ` • ${doc.period}` : ''} • {txCount} transactions</p>
+                        </div>
+                        <span style={{ fontSize: '13px', color: '#2A9D8F', fontWeight: '600', whiteSpace: 'nowrap' }}>+${parseFloat(doc.total_income || 0).toLocaleString()}</span>
+                        <span style={{ fontSize: '13px', color: '#C1121F', fontWeight: '600', whiteSpace: 'nowrap' }}>-${parseFloat(doc.total_expenses || 0).toLocaleString()}</span>
+                        {imported ? (
+                          <span style={{ padding: '5px 12px', borderRadius: '8px', background: 'rgba(42,157,143,0.12)', color: '#2A9D8F', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap' }}>✅ Imported</span>
+                        ) : txCount === 0 ? (
+                          <span style={{ padding: '5px 12px', borderRadius: '8px', background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.25)', fontSize: '12px', whiteSpace: 'nowrap' }}>No transactions</span>
+                        ) : (
+                          <button className="btn-primary" onClick={() => importDocToPersonal(doc)} disabled={importing === doc.id}
+                            style={{ padding: '7px 14px', borderRadius: '8px', border: 'none', background: importing === doc.id ? 'rgba(155,93,229,0.15)' : '#9B5DE5', color: '#fff', fontWeight: '600', fontSize: '12px', cursor: importing === doc.id ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', fontFamily: 'Poppins,sans-serif' }}>
+                            {importing === doc.id ? '⏳...' : `Import ${txCount}`}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
+
+            {/* Budget Categories grid */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 style={{ margin: 0, color: '#fff', fontSize: '15px', fontWeight: '600' }}>Budget Categories ({persCats.length})</h3>
+              <button className="btn-primary" onClick={() => setShowPersForm(!showPersForm)} style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#9B5DE5', color: '#fff', fontWeight: '600', fontSize: '13px', cursor: 'pointer', fontFamily: 'Poppins,sans-serif' }}>+ Add Category</button>
+            </div>
+
+            {showPersForm && (
+              <div style={{ ...card, marginBottom: '1rem', borderColor: 'rgba(155,93,229,0.4)' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
+                  <div style={{ gridColumn: 'span 2' }}><label>Category Name</label><input value={persForm.name} onChange={e => setPersForm({ ...persForm, name: e.target.value })} placeholder="e.g. Dining Out" /></div>
+                  <div><label>Type</label><select value={persForm.type} onChange={e => setPersForm({ ...persForm, type: e.target.value })}><option value="expense">Expense</option><option value="income">Income</option></select></div>
+                  <div><label>Monthly Budget ($)</label><input type="number" value={persForm.budgeted_amount} onChange={e => setPersForm({ ...persForm, budgeted_amount: e.target.value })} placeholder="0" /></div>
+                  <div><label>Icon (emoji)</label><input value={persForm.icon} onChange={e => setPersForm({ ...persForm, icon: e.target.value })} placeholder="💰" style={{ maxWidth: '80px !important' }} /></div>
+                </div>
+                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                  <button className="btn-primary" onClick={addPersCat} style={{ padding: '10px 24px', borderRadius: '8px', border: 'none', background: '#9B5DE5', color: '#fff', fontWeight: '700', cursor: 'pointer', fontFamily: 'Poppins,sans-serif' }}>Add</button>
+                  <button onClick={() => setShowPersForm(false)} style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.2)', background: 'transparent', color: 'rgba(255,255,255,0.6)', cursor: 'pointer' }}>Cancel</button>
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '0.75rem' }}>
+              {persCats.map(cat => {
+                const spent = spendByPersCat[cat.name] || 0;
+                const budget = parseFloat(cat.budgeted_amount || 0);
+                const pct = budget > 0 ? Math.min(100, (spent / budget) * 100) : 0;
+                const over = budget > 0 && spent > budget;
+                return (
+                  <div key={cat.id} className="card-hover" style={{ ...card, borderLeft: `3px solid ${cat.color || '#9B5DE5'}` }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '1.2rem' }}>{cat.icon}</span>
+                        <p style={{ margin: 0, color: '#fff', fontWeight: '600', fontSize: '13px' }}>{cat.name}</p>
+                      </div>
+                      <span style={{ fontSize: '10px', padding: '2px 7px', borderRadius: '20px', background: cat.type === 'income' ? 'rgba(42,157,143,0.15)' : 'rgba(193,18,31,0.12)', color: cat.type === 'income' ? '#2A9D8F' : '#C1121F', fontWeight: '600' }}>{cat.type}</span>
+                    </div>
+                    {budget > 0 ? (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', margin: '6px 0 4px 0' }}>
+                          <span style={{ fontSize: '12px', color: over ? '#C1121F' : 'rgba(255,255,255,0.4)' }}>${spent.toFixed(0)} spent{over ? ' ⚠️' : ''}</span>
+                          <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)' }}>${budget.toFixed(0)} budget</span>
+                        </div>
+                        <div style={{ background: 'rgba(255,255,255,0.07)', borderRadius: '3px', height: '5px', overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${pct}%`, background: over ? '#C1121F' : (cat.color || '#9B5DE5'), borderRadius: '3px', transition: 'width 0.4s ease' }} />
+                        </div>
+                        <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+                          <input type="number" defaultValue={budget} onBlur={e => updatePersCatBudget(cat.id, parseFloat(e.target.value) || 0)} style={{ fontSize: '12px !important', padding: '4px 8px !important' }} />
+                        </div>
+                      </>
+                    ) : (
+                      <div style={{ marginTop: '6px' }}>
+                        <input type="number" placeholder="Set budget amount" onBlur={e => { if (e.target.value) updatePersCatBudget(cat.id, parseFloat(e.target.value)); }} style={{ fontSize: '12px !important', padding: '4px 8px !important' }} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
