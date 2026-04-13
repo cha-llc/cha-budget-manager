@@ -43,7 +43,7 @@ export default function Documents() {
     setLoadingHistory(false);
   };
 
-  const addFiles = (files: FileList | File[]) => {
+  const addFiles = React.useCallback((files: FileList | File[]) => {
     const arr = Array.from(files);
     const valid = arr.filter(f => ['application/pdf','image/png','image/jpeg','image/jpg'].includes(f.type) || f.name.match(/\.(pdf|png|jpg|jpeg)$/i));
     const newItems: QueuedFile[] = valid.map(f => ({
@@ -53,7 +53,7 @@ export default function Documents() {
       status: 'pending',
     }));
     setQueue(prev => [...prev, ...newItems]);
-  };
+  }, [defaultDocType]);
 
   const removeFromQueue = (id: string) => setQueue(prev => prev.filter(q => q.id !== id));
 
@@ -223,7 +223,13 @@ Return this exact JSON structure:
             <div
               onDragOver={e => { e.preventDefault(); setDragOver(true); }}
               onDragLeave={() => setDragOver(false)}
-              onDrop={e => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files); }}
+              onDrop={e => {
+                e.preventDefault();
+                setDragOver(false);
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                  addFiles(Array.from(e.dataTransfer.files));
+                }
+              }}
               onClick={() => fileRef.current?.click()}
               style={{
                 border: `2px dashed ${dragOver ? '#C9A84C' : 'rgba(201,168,76,0.3)'}`,
@@ -236,7 +242,15 @@ Return this exact JSON structure:
               <p style={{ margin: '0 0 6px 0', color: '#fff', fontSize: '16px', fontWeight: '600' }}>Drop multiple files here or click to browse</p>
               <p style={{ margin: 0, color: 'rgba(255,255,255,0.4)', fontSize: '13px' }}>PDF, PNG, JPG, JPEG — select as many as you want at once</p>
               <input ref={fileRef} type="file" accept=".pdf,.png,.jpg,.jpeg" multiple style={{ display: 'none' }}
-                onChange={e => { if (e.target.files?.length) { addFiles(e.target.files); e.target.value = ''; } }} />
+                onChange={e => {
+                  if (e.target.files && e.target.files.length > 0) {
+                    // Copy FileList to array immediately before clearing
+                    const fileArray = Array.from(e.target.files);
+                    addFiles(fileArray);
+                    // Reset after files are captured
+                    setTimeout(() => { e.target.value = ''; }, 100);
+                  }
+                }} />
             </div>
 
             {/* Controls row */}
