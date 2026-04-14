@@ -1,541 +1,478 @@
-// BUILD_V3_PERSONALTOGGLE
 'use client';
-
-import React, { useEffect, useState } from 'react';
-import { buildPersonalInserts, buildBusinessExpenseInserts } from '@/lib/docRouting';
+import React, { useEffect, useState, useCallback } from 'react';
 import Layout from '@/components/Layout';
 import { supabase } from '@/lib/supabase';
+import { buildPersonalInserts, buildBusinessExpenseInserts } from '@/lib/docRouting';
 
-const card = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(201,168,76,0.2)', borderRadius: '12px', padding: '1.5rem' } as const;
-const DIVISIONS = ['Consulting', 'Tea Time Network', 'Digital Tools', 'Books'];
+const DIVISIONS = ['Consulting','Tea Time Network','Digital Tools','Books'];
+const DIV_COLORS: Record<string,string> = { Consulting:'#C9A84C', 'Tea Time Network':'#9B5DE5', 'Digital Tools':'#2A9D8F', Books:'#C1121F' };
+const CAT_COLORS = ['#C9A84C','#9B5DE5','#2A9D8F','#C1121F','#3a86ff','#f4a261','#06d6a0','#ef476f','#ffd166','#e9c46a','#8ecae6','#023047'];
+const CAT_ICONS: Record<string,string> = {
+  'Housing / Rent':'🏠','Food & Groceries':'🛒','Transportation':'🚗','Health & Wellness':'💊','Entertainment':'🎭','Credit Card Payments':'💳','Savings':'🏦','Emergency Fund':'🛡️','Federal Income Tax':'🏛️','State Income Tax':'🏛️','Social Security':'🔐','Medicare':'🏥','Taxes':'🏛️','Personal Care':'🧴','Other Income':'💰','Salary / Wages':'💵','Banking Transfers':'🏧','Digital Services':'📱','Investments':'📈','Miscellaneous':'📦','Money Transfers':'💸','Software & Subscriptions':'💻','Additional Income':'💰','Business Income':'🏢','Freelance':'🖥️','Primary Income':'💼',
+};
+const ACCENT = '#C9A84C';
+const card = (extra = {}) => ({ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:'16px', padding:'1.5rem', ...extra });
 
-const PERSONAL_DEFAULTS = [
-  { name: 'Housing / Rent', icon: '🏠', color: '#C1121F' },
-  { name: 'Food & Groceries', icon: '🛒', color: '#f4a261' },
-  { name: 'Transportation', icon: '✈️', color: '#2A9D8F' },
-  { name: 'Health & Wellness', icon: '💊', color: '#06d6a0' },
-  { name: 'Personal Care', icon: '🧴', color: '#9B5DE5' },
-  { name: 'Entertainment', icon: '🎬', color: '#C9A84C' },
-  { name: 'Savings', icon: '🏦', color: '#2A9D8F' },
-  { name: 'Emergency Fund', icon: '🛡️', color: '#3a86ff' },
-];
+type Mode = 'business'|'personal';
 
 export default function Budgets() {
-  const [mode, setMode] = useState<'business' | 'personal'>('business');
-
-  // ── BUSINESS STATE ──
+  const [mode, setMode] = useState<Mode>('business');
+  // Data
   const [bizBudgets, setBizBudgets] = useState<any[]>([]);
   const [bizExpenses, setBizExpenses] = useState<any[]>([]);
-  const [bizForm, setBizForm] = useState({ division: 'Consulting', monthly_budget: '' });
-  const [savingBiz, setSavingBiz] = useState(false);
-  const [showBizForm, setShowBizForm] = useState(false);
-  const [aiSuggestions, setAiSuggestions] = useState<any>(null);
-  const [generating, setGenerating] = useState(false);
-
-  // ── PERSONAL STATE ──
   const [persCats, setPersCats] = useState<any[]>([]);
   const [persTxs, setPersTxs] = useState<any[]>([]);
   const [documents, setDocuments] = useState<any[]>([]);
-  const [showPersForm, setShowPersForm] = useState(false);
-  const [persForm, setPersForm] = useState({ name: '', budgeted_amount: '', icon: '💰', color: '#C9A84C', type: 'expense' });
-  const [importing, setImporting] = useState<string | null>(null);
+  // UI
+  const [loading, setLoading] = useState(true);
+  const [importing, setImporting] = useState<string|null>(null);
   const [importMsg, setImportMsg] = useState('');
-  const [buildingFromDocs, setBuildingFromDocs] = useState(false);
-  const [clearConfirm, setClearConfirm] = useState<'idle' | 'confirm' | 'clearing'>('idle');
+  const [clearConfirm, setClearConfirm] = useState<'idle'|'confirm'|'clearing'>('idle');
   const [clearMsg, setClearMsg] = useState('');
+  const [buildingFromDocs, setBuildingFromDocs] = useState(false);
   const [buildMsg, setBuildMsg] = useState('');
-  const [exportMsg, setExportMsg] = useState('');
+  const [editBudgetId, setEditBudgetId] = useState<string|null>(null);
+  const [editBudgetVal, setEditBudgetVal] = useState('');
+  const [editDivId, setEditDivId] = useState<string|null>(null);
+  const [editDivVal, setEditDivVal] = useState('');
+  const [showAddCat, setShowAddCat] = useState(false);
+  const [newCat, setNewCat] = useState({ name:'', type:'expense' as 'income'|'expense', budgeted_amount:'', icon:'💰' });
+  const [aiBuilding, setAiBuilding] = useState(false);
+  const [activeTrendDiv, setActiveTrendDiv] = useState('All');
+  const [monthlyView, setMonthlyView] = useState<'spending'|'cashflow'>('spending');
 
   useEffect(() => { loadAll(); }, []);
 
   const loadAll = async () => {
-    const [br, er, cr, tr, dr] = await Promise.all([
+    setLoading(true);
+    const [br,er,cr,tr,dr] = await Promise.all([
       supabase.from('division_budgets').select('*'),
-      supabase.from('expenses').select('*').order('date', { ascending: false }),
+      supabase.from('expenses').select('*').order('date',{ascending:false}),
       supabase.from('personal_budget_categories').select('*').order('type').order('name'),
-      supabase.from('personal_transactions').select('*').order('date', { ascending: false }),
-      supabase.from('budget_documents').select('*').order('uploaded_at', { ascending: false }),
+      supabase.from('personal_transactions').select('*').order('date',{ascending:false}),
+      supabase.from('budget_documents').select('*').order('uploaded_at',{ascending:false}),
     ]);
     if (br.data) setBizBudgets(br.data);
     if (er.data) setBizExpenses(er.data);
     if (cr.data) setPersCats(cr.data);
     if (tr.data) setPersTxs(tr.data);
     if (dr.data) setDocuments(dr.data);
+    setLoading(false);
   };
 
-  // ── BUSINESS ACTIONS ──
-  const saveBizBudget = async () => {
-    if (!bizForm.monthly_budget) return;
-    setSavingBiz(true);
-    const { data } = await supabase.from('division_budgets')
-      .upsert({ division: bizForm.division, monthly_budget: parseFloat(bizForm.monthly_budget) }).select();
-    if (data) { setBizBudgets(bizBudgets.filter(b => b.division !== bizForm.division).concat(data)); setBizForm({ division: 'Consulting', monthly_budget: '' }); setShowBizForm(false); }
-    setSavingBiz(false);
+  // ── BUSINESS COMPUTED ──
+  const getBizDiv = (div: string) => {
+    const b = bizBudgets.find(x=>x.division===div);
+    const spent = bizExpenses.filter(e=>e.division===div).reduce((s,e)=>s+parseFloat(e.amount||0),0);
+    const budget = parseFloat(b?.monthly_budget||0);
+    return { budget, spent, remaining: Math.max(0,budget-spent), pct: budget>0?(spent/budget)*100:0, id: b?.id };
   };
+  const totalBizBudget = DIVISIONS.reduce((s,d)=>s+getBizDiv(d).budget,0);
+  const totalBizSpent = bizExpenses.reduce((s,e)=>s+parseFloat(e.amount||0),0);
 
-  const generateAIBudget = async () => {
-    setGenerating(true); setAiSuggestions(null);
-    try {
-      const spendByDiv: Record<string, Record<string, number>> = {};
-      bizExpenses.forEach(e => {
-        if (!spendByDiv[e.division]) spendByDiv[e.division] = {};
-        spendByDiv[e.division][e.category] = (spendByDiv[e.division][e.category] || 0) + parseFloat(e.amount || 0);
-      });
-      const res = await fetch('/api/ai', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-6', max_tokens: 1000,
-          system: 'You are a budget planning AI for a multi-division LLC. Return ONLY valid JSON: {"rationale":"string","division_budgets":[{"division":"string","suggested_budget":0,"current_budget":0,"reasoning":"string"}],"total_recommended":0,"reallocation_notes":["string"],"growth_investment":["string"]}. No markdown.',
-          messages: [{ role: 'user', content: `Generate AI budget for C.H.A. LLC. Divisions: ${DIVISIONS.join(', ')}. Current budgets: ${JSON.stringify(bizBudgets)}. Spending: ${JSON.stringify(spendByDiv)}. Company in growth mode, just launched 5 products.` }]
-        })
-      });
-      const data = await res.json();
-      const text = data.content?.find((c: any) => c.type === 'text')?.text || '';
-      setAiSuggestions(JSON.parse(text.replace(/```json|```/g, '').trim()));
-    } catch { /* silent */ } finally { setGenerating(false); }
-  };
+  // ── PERSONAL COMPUTED ──
+  const totalPersIncome = persTxs.filter(t=>t.type==='income').reduce((s,t)=>s+parseFloat(t.amount||0),0);
+  const totalPersExpense = persTxs.filter(t=>t.type==='expense').reduce((s,t)=>s+parseFloat(t.amount||0),0);
+  const totalPersBudgeted = persCats.filter(c=>c.type==='expense').reduce((s,c)=>s+parseFloat(c.budgeted_amount||0),0);
+  const spendByPersCat: Record<string,number> = {};
+  persTxs.filter(t=>t.type==='expense').forEach(t=>{ spendByPersCat[t.category_name]=(spendByPersCat[t.category_name]||0)+parseFloat(t.amount||0); });
+  const incomeByPersCat: Record<string,number> = {};
+  persTxs.filter(t=>t.type==='income').forEach(t=>{ incomeByPersCat[t.category_name]=(incomeByPersCat[t.category_name]||0)+parseFloat(t.amount||0); });
 
-  const applyAISuggestion = async (division: string, amount: number) => {
-    const { data } = await supabase.from('division_budgets').upsert({ division, monthly_budget: amount }).select();
-    if (data) setBizBudgets(bizBudgets.filter(b => b.division !== division).concat(data));
-  };
-
-  const exportBizCSV = () => {
-    const rows = [['Division', 'Monthly Budget', 'Spent', 'Remaining', 'Utilization']];
-    DIVISIONS.forEach(div => {
-      const b = bizBudgets.find(b => b.division === div);
-      const spent = bizExpenses.filter(e => e.division === div).reduce((s, e) => s + parseFloat(e.amount || 0), 0);
-      const budget = parseFloat(b?.monthly_budget || 0);
-      rows.push([div, String(budget), spent.toFixed(2), Math.max(0, budget - spent).toFixed(2), budget > 0 ? ((spent / budget) * 100).toFixed(1) + '%' : '0%']);
-    });
-    const csv = rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n');
-    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = `cha-business-budget-${new Date().toISOString().slice(0,10)}.csv`; a.click();
-    setExportMsg('✅ Exported'); setTimeout(() => setExportMsg(''), 2500);
-  };
-
-  // ── PERSONAL ACTIONS ──
-  const addPersCat = async () => {
-    if (!persForm.name) return;
-    const { data } = await supabase.from('personal_budget_categories').insert([{
-      name: persForm.name, type: persForm.type,
-      budgeted_amount: parseFloat(persForm.budgeted_amount) || 0,
-      icon: persForm.icon, color: persForm.color,
-    }]).select();
-    if (data) { setPersCats([...persCats, data[0]]); setPersForm({ name: '', budgeted_amount: '', icon: '💰', color: '#C9A84C', type: 'expense' }); setShowPersForm(false); }
-  };
-
-  const updatePersCatBudget = async (id: string, amount: number) => {
-    await supabase.from('personal_budget_categories').update({ budgeted_amount: amount }).eq('id', id);
-    setPersCats(persCats.map(c => c.id === id ? { ...c, budgeted_amount: amount } : c));
-  };
-
-  // Smart category matcher
-  const matchCategory = (description: string, type: 'income' | 'expense'): string => {
-    const d = description.toLowerCase();
-    if (type === 'income') {
-      if (d.includes('salary') || d.includes('payroll') || d.includes('regular pay') || d.includes('wage') || d.includes('net pay') || d.includes('direct deposit')) return 'Salary / Wages';
-      if (d.includes('business') || d.includes('consulting') || d.includes('invoice') || d.includes('cha') || d.includes('stripe')) return 'Business Income';
-      if (d.includes('freelance') || d.includes('contract')) return 'Freelance';
-      if (d.includes('interest') || d.includes('dividend') || d.includes('refund') || d.includes('transfer')) return 'Other Income';
-      return 'Other Income';
-    } else {
-      if (d.includes('rent') || d.includes('housing') || d.includes('mortgage') || d.includes('lease')) return 'Housing / Rent';
-      if (d.includes('grocery') || d.includes('food') || d.includes('walmart') || d.includes('kroger') || d.includes('publix') || d.includes('whole foods') || d.includes('trader joe') || d.includes('aldi')) return 'Food & Groceries';
-      if (d.includes('uber') || d.includes('lyft') || d.includes('gas') || d.includes('fuel') || d.includes('airline') || d.includes('flight') || d.includes('avianca') || d.includes('transport') || d.includes('parking')) return 'Transportation';
-      if (d.includes('medical') || d.includes('dental') || d.includes('vision') || d.includes('health') || d.includes('pharmacy') || d.includes('doctor') || d.includes('hospital') || d.includes('insurance') && (d.includes('health') || d.includes('medical') || d.includes('dental') || d.includes('vision'))) return 'Health & Wellness';
-      if (d.includes('netflix') || d.includes('spotify') || d.includes('entertainment') || d.includes('movie') || d.includes('amazon prime') || d.includes('hulu') || d.includes('disney')) return 'Entertainment';
-      if (d.includes('savings') || d.includes('save') || d.includes('deposit to savings')) return 'Savings';
-      if (d.includes('401k') || d.includes('401(k)') || d.includes('emergency') || d.includes('retirement')) return 'Emergency Fund';
-      if (d.includes('federal') || d.includes('state tax') || d.includes('fica') || d.includes('social security') || d.includes('medicare') || d.includes('income tax')) return 'Taxes';
-      return 'Personal Care';
+  // ── 6-MONTH TREND ──
+  const buildMonthly6 = (source: 'biz'|'pers') => {
+    const months: Record<string,{inc:number,exp:number,label:string,key:string}> = {};
+    const now = new Date();
+    for (let i=5;i>=0;i--) {
+      const d = new Date(now.getFullYear(),now.getMonth()-i,1);
+      const key = d.toISOString().slice(0,7);
+      months[key] = {inc:0,exp:0,label:d.toLocaleString('default',{month:'short'}),key};
     }
+    if (source==='biz') {
+      const filtered = activeTrendDiv==='All'?bizExpenses:bizExpenses.filter(e=>e.division===activeTrendDiv);
+      filtered.forEach(e=>{ const k=(e.date||'').slice(0,7); if(months[k]) months[k].exp+=parseFloat(e.amount||0); });
+    } else {
+      persTxs.forEach(t=>{ const k=(t.date||'').slice(0,7); if(!months[k]) return; if(t.type==='income') months[k].inc+=parseFloat(t.amount||0); else months[k].exp+=parseFloat(t.amount||0); });
+    }
+    return Object.values(months);
   };
 
-  // Import transactions from a document into personal budget
-  // Uses shared docRouting library — same logic as documents page
+  // Donut data for personal spending
+  const topPersSpend = Object.entries(spendByPersCat).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const totalPersSpendCalc = topPersSpend.reduce((s,[,a])=>s+(a as number),0)||1;
+
+  // Budget vs actual for personal
+  const catsWithBudget = persCats.filter(c=>parseFloat(c.budgeted_amount||0)>0 || spendByPersCat[c.name]>0);
+
+  // Division budget save
+  const saveDivBudget = async (div: string) => {
+    const val = parseFloat(editDivVal);
+    if (isNaN(val)) return;
+    const { data } = await supabase.from('division_budgets').upsert({ division:div, monthly_budget:val }).select();
+    if (data) { setBizBudgets(prev => { const filtered=prev.filter(b=>b.division!==div); return [...filtered,...data]; }); }
+    setEditDivId(null);
+  };
+
+  const savePersBudget = async (id: string) => {
+    const val = parseFloat(editBudgetVal);
+    if (isNaN(val)) return;
+    await supabase.from('personal_budget_categories').update({ budgeted_amount:val }).eq('id',id);
+    setPersCats(prev=>prev.map(c=>c.id===id?{...c,budgeted_amount:val}:c));
+    setEditBudgetId(null);
+  };
+
+  const addCategory = async () => {
+    if (!newCat.name) return;
+    const { data } = await supabase.from('personal_budget_categories').insert([{ name:newCat.name, type:newCat.type, budgeted_amount:parseFloat(newCat.budgeted_amount||'0'), icon:newCat.icon, color:'#C9A84C' }]).select();
+    if (data) { setPersCats(prev=>[...prev,...data]); setShowAddCat(false); setNewCat({ name:'',type:'expense',budgeted_amount:'',icon:'💰' }); }
+  };
+
   const importDocToPersonal = async (doc: any) => {
     setImporting(doc.id); setImportMsg('');
     try {
       const inserts = buildPersonalInserts(doc, doc.file_name, doc.id);
-      if (!inserts.length) {
-        setImportMsg('No importable transactions found in this document.');
-        setImporting(null);
-        return;
-      }
+      if (!inserts.length) { setImportMsg('No importable transactions found.'); setImporting(null); return; }
       const { data, error } = await supabase.from('personal_transactions').insert(inserts).select();
       if (error) throw error;
       if (data) {
-        setPersTxs(prev => [...data, ...prev]);
-        await supabase.from('budget_documents').update({
-          budget_type: 'both',
-          imported_to_budget: true,
-          imported_at: new Date().toISOString(),
-        }).eq('id', doc.id);
-        const incomeCount = inserts.filter(i => i.type === 'income').length;
-        const expenseCount = inserts.filter(i => i.type === 'expense').length;
-        setImportMsg(`✅ Imported from "${doc.file_name}": ${incomeCount} income item${incomeCount !== 1 ? 's' : ''}, ${expenseCount} expense item${expenseCount !== 1 ? 's' : ''} — categorized automatically`);
+        setPersTxs(prev=>[...data,...prev]);
+        await supabase.from('budget_documents').update({ imported_to_budget:true, imported_at:new Date().toISOString() }).eq('id',doc.id);
+        setDocuments(prev=>prev.map(d=>d.id===doc.id?{...d,imported_to_budget:true}:d));
+        setImportMsg(`✅ Imported ${data.length} transactions from "${doc.file_name}"`);
       }
-    } catch (e: any) {
-      console.error('Import error:', e);
-      setImportMsg('Import failed: ' + (e?.message || 'unknown error'));
-    }
+    } catch(e:any) { setImportMsg('Import failed: '+(e?.message||'unknown')); }
     setImporting(null);
-    setTimeout(() => setImportMsg(''), 8000);
+    setTimeout(()=>setImportMsg(''),8000);
   };
 
-  // Build a full personal budget from ALL uploaded documents via AI
-  const buildPersonalBudgetFromDocs = async () => {
-    if (!documents.length) { setBuildMsg('No documents uploaded yet. Go to Document Intelligence first.'); return; }
-    setBuildingFromDocs(true); setBuildMsg('');
+  const buildBudgetFromDocs = async () => {
+    setAiBuilding(true); setBuildMsg('');
     try {
-      // For pay stubs: use net pay (key_figures) not total_income which may be gross
-      const getDocNetIncome = (d: any) => {
-        const docType = (d.doc_type || '').toLowerCase();
-        if (docType.includes('pay') || docType.includes('stub') || docType.includes('paycheck')) {
-          const kf = d.key_figures || [];
-          const netPayFig = kf.find((k: any) => k.label?.toLowerCase().includes('net pay'));
-          if (netPayFig) return parseFloat(netPayFig.value?.replace(/[$,]/g, '') || '0');
-          return parseFloat(d.net_cashflow || d.total_income || '0');
+      const totalIncome = documents.reduce((s,d)=>{
+        const dt=(d.doc_type||'').toLowerCase();
+        if (dt.includes('pay')||dt.includes('stub')||dt.includes('paycheck')) {
+          const kf=d.key_figures||[];
+          const nf=kf.find((k:any)=>k.label?.toLowerCase().includes('net pay'));
+          return s+parseFloat(nf?.value?.replace(/[$,]/g,'')||d.net_cashflow||d.total_income||'0');
         }
-        return parseFloat(d.total_income || '0');
-      };
-
-      const allTxs = documents.flatMap(d => {
-        const docType = (d.doc_type || '').toLowerCase();
-        const isPayStub = docType.includes('pay') || docType.includes('stub') || docType.includes('paycheck');
-        if (isPayStub) {
-          // For pay stubs only send net pay and deductions — not gross
-          const kf = d.key_figures || [];
-          const netPayFig = kf.find((k: any) => k.label?.toLowerCase().includes('net pay'));
-          const netPay = netPayFig ? parseFloat(netPayFig.value?.replace(/[$,]/g, '') || '0') : parseFloat(d.net_cashflow || '0');
-          const deductions = (d.transactions || []).filter((t: any) => t.type === 'debit');
-          return [{ description: 'Net Pay', amount: netPay, type: 'credit', doc: d.file_name, period: d.period }, ...deductions.map((t: any) => ({ ...t, doc: d.file_name, period: d.period }))];
-        }
-        return (d.transactions || []).map((t: any) => ({ ...t, doc: d.file_name, period: d.period }));
-      });
-      const totalIncome = documents.reduce((s, d) => s + getDocNetIncome(d), 0);
-      const totalExpenses = documents.reduce((s, d) => s + parseFloat(d.total_expenses || 0), 0);
-      const res = await fetch('/api/ai', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-6', max_tokens: 1000,
-          system: 'You are a personal finance AI. Return ONLY valid JSON: {"summary":"string","category_budgets":[{"name":"string","type":"income|expense","suggested_amount":0,"icon":"emoji","reasoning":"string"}],"monthly_income_estimate":0,"monthly_expense_estimate":0,"savings_rate":"string","insights":["string"]}. Base it strictly on the actual document data provided. No markdown.',
-          messages: [{ role: 'user', content: `Build a personal budget from these uploaded financial documents. Total income across all docs: $${totalIncome.toFixed(2)}. Total expenses: $${totalExpenses.toFixed(2)}. Transactions sample: ${JSON.stringify(allTxs.slice(0, 40))}. Documents: ${documents.length} total. Create realistic monthly budget categories based on the actual spending patterns visible in the data.` }]
-        })
-      });
-      const data = await res.json();
-      const text = data.content?.find((c: any) => c.type === 'text')?.text || '';
-      const result = JSON.parse(text.replace(/```json|```/g, '').trim());
-
-      // Upsert each suggested category
-      let added = 0;
-      for (const cat of result.category_budgets || []) {
-        const existing = persCats.find(c => c.name.toLowerCase() === cat.name.toLowerCase());
-        if (existing) {
-          await supabase.from('personal_budget_categories').update({ budgeted_amount: cat.suggested_amount }).eq('id', existing.id);
-        } else {
-          await supabase.from('personal_budget_categories').insert([{
-            name: cat.name, type: cat.type,
-            budgeted_amount: cat.suggested_amount,
-            icon: cat.icon || '💰', color: cat.type === 'income' ? '#2A9D8F' : '#C9A84C',
-          }]);
-          added++;
-        }
+        return s+parseFloat(d.total_income||'0');
+      },0);
+      const totalExp = documents.reduce((s,d)=>s+parseFloat(d.total_expenses||'0'),0);
+      const allTxSample = documents.flatMap(d=>(d.transactions||[]).slice(0,15)).slice(0,60);
+      const res = await fetch('/api/ai', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
+        model:'claude-sonnet-4-6', max_tokens:1500,
+        system:'You are a personal finance AI. Return ONLY valid JSON: {"summary":"string","category_budgets":[{"name":"string","type":"income|expense","suggested_amount":0,"icon":"emoji","reasoning":"string"}],"monthly_income_estimate":0,"monthly_expense_estimate":0,"savings_rate":"string","insights":["string"]}. No markdown.',
+        messages:[{ role:'user', content:`Build a personal budget from ${documents.length} uploaded documents. Net income: $${totalIncome.toFixed(0)}, expenses: $${totalExp.toFixed(0)}. Sample transactions: ${JSON.stringify(allTxSample)}. Create realistic monthly budget categories.` }]
+      })});
+      const d = await res.json();
+      const text = d.content?.find((c:any)=>c.type==='text')?.text||'';
+      const result = JSON.parse(text.replace(/```json|```/g,'').trim());
+      let added=0;
+      for (const cat of result.category_budgets||[]) {
+        const existing = persCats.find(c=>c.name.toLowerCase()===cat.name.toLowerCase());
+        if (existing) await supabase.from('personal_budget_categories').update({ budgeted_amount:cat.suggested_amount }).eq('id',existing.id);
+        else { await supabase.from('personal_budget_categories').insert([{ name:cat.name, type:cat.type, budgeted_amount:cat.suggested_amount, icon:cat.icon||'💰', color:'#C9A84C' }]); added++; }
       }
       await loadAll();
-      setBuildMsg(`✅ Personal budget built from ${documents.length} document${documents.length !== 1 ? 's' : ''}. ${added} new categories created. ${result.summary}`);
-    } catch (e: any) {
-      setBuildMsg('Could not build budget. Make sure you have uploaded documents first.');
-    } finally { setBuildingFromDocs(false); }
+      setBuildMsg(`✅ Budget built from ${documents.length} docs. ${added} new categories. ${result.summary}`);
+    } catch(e:any) { setBuildMsg('Build failed. Make sure you have uploaded documents first.'); }
+    setAiBuilding(false);
   };
 
-  // Clear all documents + personal transactions — fresh start
   const clearAllData = async () => {
     setClearConfirm('clearing');
     try {
-      // Delete all personal transactions from document imports
-      await supabase.from('personal_transactions')
-        .delete()
-        .like('source', 'document:%');
-      // Delete all budget documents
-      await supabase.from('budget_documents').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      // Reset personal budget categories budgeted amounts to 0
-      await supabase.from('personal_budget_categories')
-        .update({ budgeted_amount: 0 })
-        .neq('id', '00000000-0000-0000-0000-000000000000');
-      // Reload everything
+      await supabase.from('personal_transactions').delete().like('source','document:%');
+      await supabase.from('budget_documents').delete().neq('id','00000000-0000-0000-0000-000000000000');
+      await supabase.from('personal_budget_categories').update({ budgeted_amount:0 }).neq('id','00000000-0000-0000-0000-000000000000');
       await loadAll();
-      setClearMsg('✅ All documents and imported transactions cleared. Ready for fresh data.');
+      setClearMsg('✅ Cleared. Upload fresh documents to start over.');
       setClearConfirm('idle');
-      setTimeout(() => setClearMsg(''), 8000);
-    } catch (e: any) {
-      setClearMsg('❌ Clear failed: ' + (e?.message || 'unknown error'));
-      setClearConfirm('idle');
-    }
+      setTimeout(()=>setClearMsg(''),8000);
+    } catch(e:any) { setClearMsg('❌ Failed: '+(e?.message||'error')); setClearConfirm('idle'); }
   };
 
-  // ── COMPUTED ──
-  const getBizDivData = (div: string) => {
-    const b = bizBudgets.find(b => b.division === div);
-    const spent = bizExpenses.filter(e => e.division === div).reduce((s, e) => s + parseFloat(e.amount || 0), 0);
-    const budget = parseFloat(b?.monthly_budget || 0);
-    const pct = budget > 0 ? Math.min(100, (spent / budget) * 100) : 0;
-    const color = pct > 90 ? '#C1121F' : pct > 70 ? '#C9A84C' : '#2A9D8F';
-    return { budget, spent, remaining: Math.max(0, budget - spent), pct, color, status: pct > 90 ? '🔴 Over Budget' : pct > 70 ? '🟡 Watch' : '🟢 On Track' };
-  };
+  const bizMonthly = buildMonthly6('biz');
+  const persMonthly = buildMonthly6('pers');
+  const monthly = mode==='business'?bizMonthly:persMonthly;
+  const maxBar = Math.max(...monthly.map(m=>Math.max(m.inc,m.exp)),1);
 
-  const totalBizBudget = bizBudgets.reduce((s, b) => s + parseFloat(b.monthly_budget || 0), 0);
-  const totalBizSpent = bizExpenses.reduce((s, e) => s + parseFloat(e.amount || 0), 0);
-
-  const spendByPersCat: Record<string, number> = {};
-  persTxs.filter(t => t.type === 'expense').forEach(t => { spendByPersCat[t.category_name] = (spendByPersCat[t.category_name] || 0) + parseFloat(t.amount || 0); });
-  const totalPersIncome = persTxs.filter(t => t.type === 'income').reduce((s, t) => s + parseFloat(t.amount || 0), 0);
-  const totalPersExpenses = persTxs.filter(t => t.type === 'expense').reduce((s, t) => s + parseFloat(t.amount || 0), 0);
-  const totalPersBudgeted = persCats.filter(c => c.type === 'expense').reduce((s, c) => s + parseFloat(c.budgeted_amount || 0), 0);
+  const inputStyle = { background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.12)', color:'#fff', borderRadius:'8px', padding:'8px 12px', fontSize:'13px', width:'100%', fontFamily:'Poppins,sans-serif', outline:'none' };
 
   return (
     <Layout activeTab="budgets">
-      <div style={{ maxWidth: '1200px' }}>
+      <style>{`
+        input,select { ${Object.entries(inputStyle).map(([k,v])=>`${k.replace(/([A-Z])/g,'-$1').toLowerCase()}:${v}`).join(';')} }
+        input:focus,select:focus { border-color:${ACCENT}!important; }
+        label { display:block; font-size:11px; color:rgba(255,255,255,0.4); text-transform:uppercase; letter-spacing:0.6px; margin-bottom:5px; font-weight:600; }
+        .hover-row:hover { background:rgba(255,255,255,0.04)!important; }
+        .budget-bar { transition: width 0.6s cubic-bezier(0.4,0,0.2,1); }
+      `}</style>
+      <div style={{maxWidth:'1280px'}}>
 
-        {/* Header + Mode Toggle */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2rem' }}>
+        {/* HEADER */}
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'2rem',flexWrap:'wrap',gap:'1rem'}}>
           <div>
-            <h2 style={{ margin: '0 0 6px 0', color: '#fff', fontSize: '22px', fontWeight: '700', fontFamily: "'Lora', serif" }}>Budget Management</h2>
-            <p style={{ margin: 0, color: 'rgba(255,255,255,0.5)', fontSize: '14px' }}>
-              {mode === 'business' ? 'C.H.A. LLC business budgets across all four divisions' : 'Your personal budget — separate from business, built from your documents'}
+            <h2 style={{margin:'0 0 4px',color:'#fff',fontSize:'24px',fontWeight:'700',fontFamily:"'Lora',serif",letterSpacing:'-0.3px'}}>Budgets</h2>
+            <p style={{margin:0,color:'rgba(255,255,255,0.4)',fontSize:'13px'}}>
+              {mode==='business'?`$${totalBizSpent.toLocaleString(undefined,{maximumFractionDigits:0})} spent of $${totalBizBudget.toLocaleString(undefined,{maximumFractionDigits:0})} budgeted across ${DIVISIONS.length} divisions`:`$${totalPersExpense.toLocaleString(undefined,{maximumFractionDigits:0})} spent of $${totalPersBudgeted.toLocaleString(undefined,{maximumFractionDigits:0})} budgeted`}
             </p>
           </div>
-          <div style={{ display: 'flex', gap: '4px', background: 'rgba(255,255,255,0.06)', borderRadius: '10px', padding: '4px' }}>
-            {(['business', 'personal'] as const).map(m => (
-              <button key={m} onClick={() => setMode(m)} style={{
-                padding: '10px 22px', borderRadius: '8px', border: 'none', cursor: 'pointer',
-                background: mode === m ? (m === 'business' ? '#C9A84C' : '#9B5DE5') : 'transparent',
-                color: mode === m ? (m === 'business' ? '#1A1A2E' : '#fff') : 'rgba(255,255,255,0.5)',
-                fontWeight: mode === m ? '700' : '400', fontSize: '13px', fontFamily: 'Poppins,sans-serif',
-                transition: 'all 0.2s',
-              }}>
-                {m === 'business' ? '🏢 Business Budget' : '🧾 Personal Budget'}
+          <div style={{display:'flex',gap:'6px',background:'rgba(255,255,255,0.05)',borderRadius:'12px',padding:'5px'}}>
+            {(['business','personal'] as Mode[]).map(m=>(
+              <button key={m} onClick={()=>setMode(m)} style={{padding:'10px 24px',borderRadius:'8px',border:'none',cursor:'pointer',background:mode===m?(m==='business'?ACCENT:'#9B5DE5'):'transparent',color:mode===m?(m==='business'?'#1A1A2E':'#fff'):'rgba(255,255,255,0.45)',fontWeight:mode===m?'700':'400',fontSize:'13px',fontFamily:'Poppins,sans-serif',transition:'all 0.2s'}}>
+                {m==='business'?'🏢 Business':'🧾 Personal'}
               </button>
             ))}
           </div>
         </div>
 
-        {/* ═══════════════════════════════════════ BUSINESS MODE ═══════════════════════════════════════ */}
-        {mode === 'business' && (
+        {/* ══════════ BUSINESS MODE ══════════ */}
+        {mode==='business' && (
           <div>
-            {/* Summary */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
+            {/* KPIs */}
+            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'1rem',marginBottom:'1.5rem'}}>
               {[
-                { label: 'Total Monthly Budget', value: `$${totalBizBudget.toLocaleString()}`, color: '#C9A84C' },
-                { label: 'Total Expenses', value: `$${totalBizSpent.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#C1121F' },
-                { label: 'Budget Utilization', value: totalBizBudget > 0 ? `${((totalBizSpent / totalBizBudget) * 100).toFixed(0)}%` : '0%', color: '#2A9D8F' },
-              ].map(m => (
-                <div key={m.label} className="card-hover" style={card}>
-                  <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{m.label}</p>
-                  <p style={{ margin: '6px 0 0 0', fontSize: '28px', fontWeight: '700', color: m.color }}>{m.value}</p>
+                {label:'Total Budgeted',value:`$${totalBizBudget.toLocaleString(undefined,{maximumFractionDigits:0})}`,sub:'monthly',color:ACCENT},
+                {label:'Total Spent',value:`$${totalBizSpent.toLocaleString(undefined,{maximumFractionDigits:0})}`,sub:`${bizExpenses.length} transactions`,color:'#C1121F'},
+                {label:'Remaining',value:`$${Math.max(0,totalBizBudget-totalBizSpent).toLocaleString(undefined,{maximumFractionDigits:0})}`,sub:totalBizBudget>0?`${Math.max(0,100-(totalBizSpent/totalBizBudget*100)).toFixed(0)}% left`:'',color:'#2A9D8F'},
+                {label:'Budget Health',value:totalBizBudget>0?totalBizSpent>totalBizBudget?'Over':'On Track':'No Budget',sub:totalBizBudget>0?`${((totalBizSpent/totalBizBudget)*100).toFixed(0)}% used`:'',color:totalBizSpent>totalBizBudget?'#C1121F':'#2A9D8F'},
+              ].map(k=>(
+                <div key={k.label} style={{...card(),borderLeft:`3px solid ${k.color}`}}>
+                  <p style={{margin:'0 0 6px',fontSize:'11px',color:'rgba(255,255,255,0.4)',textTransform:'uppercase',letterSpacing:'0.6px'}}>{k.label}</p>
+                  <p style={{margin:0,fontSize:'22px',fontWeight:'700',color:k.color,lineHeight:1}}>{k.value}</p>
+                  {k.sub&&<p style={{margin:'4px 0 0',fontSize:'11px',color:'rgba(255,255,255,0.35)'}}>{k.sub}</p>}
                 </div>
               ))}
             </div>
 
-            {/* Action buttons */}
-            <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
-              {exportMsg && <span style={{ color: '#2A9D8F', fontSize: '13px', alignSelf: 'center' }}>{exportMsg}</span>}
-              <button className="btn-primary" onClick={exportBizCSV} style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid rgba(201,168,76,0.4)', background: 'transparent', color: '#C9A84C', fontWeight: '600', fontSize: '13px', cursor: 'pointer' }}>📥 Export CSV</button>
-              <button className="btn-primary" onClick={generateAIBudget} disabled={generating} style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #9B5DE5, #2A9D8F)', color: '#fff', fontWeight: '600', fontSize: '13px', cursor: 'pointer' }}>
-                {generating ? '🤖 Generating...' : '🤖 AI Generate Budgets'}
-              </button>
-              <button className="btn-primary" onClick={() => setShowBizForm(!showBizForm)} style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', background: '#C9A84C', color: '#1A1A2E', fontWeight: '700', fontSize: '13px', cursor: 'pointer' }}>+ Set Budget</button>
-            </div>
-
-            {/* Set Budget Form */}
-            {showBizForm && (
-              <div style={{ ...card, marginBottom: '1.5rem', borderColor: 'rgba(201,168,76,0.5)' }}>
-                <h3 style={{ margin: '0 0 1.25rem 0', color: '#C9A84C', fontSize: '15px', fontWeight: '600' }}>Set Division Budget</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '1rem', alignItems: 'flex-end' }}>
-                  <div><label>Division</label><select value={bizForm.division} onChange={e => setBizForm({ ...bizForm, division: e.target.value })}>{DIVISIONS.map(d => <option key={d}>{d}</option>)}</select></div>
-                  <div><label>Monthly Budget ($)</label><input type="number" value={bizForm.monthly_budget} onChange={e => setBizForm({ ...bizForm, monthly_budget: e.target.value })} placeholder="5000" /></div>
-                  <div style={{ display: 'flex', gap: '0.75rem' }}>
-                    <button className="btn-primary" onClick={saveBizBudget} disabled={savingBiz} style={{ padding: '10px 20px', borderRadius: '8px', border: 'none', background: '#C9A84C', color: '#1A1A2E', fontWeight: '700', cursor: 'pointer', fontFamily: 'Poppins,sans-serif' }}>{savingBiz ? 'Saving...' : 'Save'}</button>
-                    <button onClick={() => setShowBizForm(false)} style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.2)', background: 'transparent', color: 'rgba(255,255,255,0.6)', cursor: 'pointer' }}>Cancel</button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Division Cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
-              {DIVISIONS.map(div => {
-                const d = getBizDivData(div);
-                return (
-                  <div key={div} className="card-hover" style={{ ...card, borderLeft: `3px solid ${d.color}` }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                      <div>
-                        <h3 style={{ margin: 0, color: '#fff', fontSize: '16px', fontWeight: '600' }}>{div}</h3>
-                        <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '20px', background: `${d.color}20`, color: d.color, fontWeight: '600' }}>{d.status}</span>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <p style={{ margin: 0, fontSize: '22px', fontWeight: '700', color: d.color }}>{d.pct.toFixed(0)}%</p>
-                        <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.35)' }}>utilized</p>
-                      </div>
-                    </div>
-                    <div style={{ background: 'rgba(255,255,255,0.07)', borderRadius: '4px', height: '8px', marginBottom: '1rem', overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${d.pct}%`, background: d.color, borderRadius: '4px', transition: 'width 0.5s ease' }} />
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem' }}>
-                      {[{ label: 'Budget', value: `$${d.budget.toLocaleString()}`, color: '#C9A84C' }, { label: 'Spent', value: `$${d.spent.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#C1121F' }, { label: 'Remaining', value: `$${d.remaining.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#2A9D8F' }].map(m => (
-                        <div key={m.label} style={{ textAlign: 'center', padding: '0.5rem', background: 'rgba(255,255,255,0.03)', borderRadius: '6px' }}>
-                          <p style={{ margin: 0, fontSize: '10px', color: 'rgba(255,255,255,0.35)' }}>{m.label}</p>
-                          <p style={{ margin: '2px 0 0 0', fontSize: '14px', fontWeight: '700', color: m.color }}>{m.value}</p>
+            {/* Division budget bars + trend chart */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'1.5rem',marginBottom:'1.5rem'}}>
+              {/* Division budgets */}
+              <div style={card()}>
+                <h3 style={{margin:'0 0 1.25rem',color:'#fff',fontSize:'14px',fontWeight:'600',textTransform:'uppercase',letterSpacing:'0.5px'}}>Division Budgets</h3>
+                {DIVISIONS.map(div=>{
+                  const {budget,spent,pct,id} = getBizDiv(div);
+                  const over = spent > budget && budget > 0;
+                  const barColor = over?'#C1121F':pct>75?'#f4a261':DIV_COLORS[div];
+                  return (
+                    <div key={div} style={{marginBottom:'1.25rem'}}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}>
+                        <span style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                          <span style={{width:'10px',height:'10px',borderRadius:'50%',background:DIV_COLORS[div],boxShadow:`0 0 8px ${DIV_COLORS[div]}66`,display:'inline-block'}}/>
+                          <span style={{fontSize:'13px',color:'#fff',fontWeight:'600'}}>{div}</span>
+                        </span>
+                        <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                          {editDivId===div ? (
+                            <div style={{display:'flex',gap:'4px',alignItems:'center'}}>
+                              <input type="number" value={editDivVal} onChange={e=>setEditDivVal(e.target.value)} style={{width:'90px',padding:'4px 8px',fontSize:'12px'}} autoFocus onKeyDown={e=>e.key==='Enter'&&saveDivBudget(div)} />
+                              <button onClick={()=>saveDivBudget(div)} style={{padding:'4px 10px',borderRadius:'6px',border:'none',background:ACCENT,color:'#1A1A2E',fontWeight:'700',fontSize:'11px',cursor:'pointer',fontFamily:'Poppins,sans-serif'}}>✓</button>
+                              <button onClick={()=>setEditDivId(null)} style={{padding:'4px 8px',borderRadius:'6px',border:'1px solid rgba(255,255,255,0.1)',background:'transparent',color:'rgba(255,255,255,0.4)',fontSize:'11px',cursor:'pointer',fontFamily:'Poppins,sans-serif'}}>✗</button>
+                            </div>
+                          ) : (
+                            <button onClick={()=>{setEditDivId(div);setEditDivVal(budget.toString());}} style={{background:'none',border:'none',color:'rgba(255,255,255,0.2)',cursor:'pointer',fontSize:'12px',fontFamily:'Poppins,sans-serif'}}>✏️ ${budget>0?budget.toLocaleString():'Set budget'}</button>
+                          )}
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* AI Suggestions */}
-            {generating && <div style={{ ...card, textAlign: 'center', padding: '2.5rem' }}><p style={{ color: '#9B5DE5', fontWeight: '600', margin: 0 }}>🤖 Analyzing spending history and generating optimized budgets...</p></div>}
-            {aiSuggestions && (
-              <div style={card}>
-                <h3 style={{ margin: '0 0 1rem 0', color: '#9B5DE5', fontSize: '16px', fontWeight: '600' }}>🤖 AI Budget Recommendations</h3>
-                <div style={{ padding: '0.75rem 1rem', background: 'rgba(155,93,229,0.08)', border: '1px solid rgba(155,93,229,0.2)', borderRadius: '8px', marginBottom: '1rem' }}>
-                  <p style={{ margin: 0, color: 'rgba(255,255,255,0.75)', fontSize: '13px', lineHeight: '1.6' }}>{aiSuggestions.rationale}</p>
-                </div>
-                {aiSuggestions.division_budgets?.map((d: any) => (
-                  <div key={d.division} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.85rem 1rem', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', marginBottom: '0.5rem' }}>
-                    <div>
-                      <p style={{ margin: 0, color: '#fff', fontWeight: '600', fontSize: '14px' }}>{d.division}</p>
-                      <p style={{ margin: 0, color: 'rgba(255,255,255,0.45)', fontSize: '12px' }}>{d.reasoning}</p>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexShrink: 0 }}>
-                      <div style={{ textAlign: 'right' }}>
-                        <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.35)' }}>Suggested</p>
-                        <p style={{ margin: 0, fontSize: '18px', fontWeight: '700', color: '#9B5DE5' }}>${d.suggested_budget?.toLocaleString()}</p>
                       </div>
-                      <button className="btn-primary" onClick={() => applyAISuggestion(d.division, d.suggested_budget)}
-                        style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: 'rgba(155,93,229,0.25)', color: '#9B5DE5', fontWeight: '600', fontSize: '12px', cursor: 'pointer', fontFamily: 'Poppins,sans-serif' }}>Apply</button>
+                      <div style={{height:'8px',background:'rgba(255,255,255,0.07)',borderRadius:'6px',overflow:'hidden',marginBottom:'6px'}}>
+                        <div className="budget-bar" style={{height:'100%',width:`${Math.min(100,pct)}%`,background:barColor,borderRadius:'6px',boxShadow:`0 0 8px ${barColor}44`}}/>
+                      </div>
+                      <div style={{display:'flex',justifyContent:'space-between',fontSize:'11px'}}>
+                        <span style={{color:over?'#C1121F':'rgba(255,255,255,0.4)'}}>
+                          ${spent.toLocaleString(undefined,{maximumFractionDigits:0})} spent{over?` ⚠️ $${(spent-budget).toFixed(0)} over`:''}
+                        </span>
+                        {budget>0&&<span style={{color:'rgba(255,255,255,0.3)'}}>${budget.toLocaleString()} budget</span>}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
-            )}
+
+              {/* 6-month trend */}
+              <div style={card()}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1.25rem',flexWrap:'wrap',gap:'0.5rem'}}>
+                  <h3 style={{margin:0,color:'#fff',fontSize:'14px',fontWeight:'600',textTransform:'uppercase',letterSpacing:'0.5px'}}>Spend Trend</h3>
+                  <div style={{display:'flex',gap:'4px'}}>
+                    {['All',...DIVISIONS].map(d=>(
+                      <button key={d} onClick={()=>setActiveTrendDiv(d)} style={{padding:'3px 10px',borderRadius:'20px',border:`1px solid ${activeTrendDiv===d?DIV_COLORS[d]||ACCENT:'rgba(255,255,255,0.1)'}`,background:activeTrendDiv===d?`${DIV_COLORS[d]||ACCENT}22`:'transparent',color:activeTrendDiv===d?DIV_COLORS[d]||ACCENT:'rgba(255,255,255,0.4)',fontSize:'10px',fontWeight:'600',cursor:'pointer',fontFamily:'Poppins,sans-serif'}}>
+                        {d==='All'?'All':d.split(' ')[0]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{display:'flex',alignItems:'flex-end',gap:'8px',height:'140px'}}>
+                  {bizMonthly.map((m,i)=>(
+                    <div key={m.key} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:'5px',height:'100%',justifyContent:'flex-end'}}>
+                      {m.exp>0&&<span style={{fontSize:'9px',color:i===5?ACCENT:'rgba(255,255,255,0.3)',fontWeight:'600'}}>${m.exp.toFixed(0)}</span>}
+                      <div style={{width:'100%',background:i===5?`${ACCENT}bb`:`${ACCENT}33`,borderRadius:'4px 4px 0 0',height:`${(m.exp/maxBar)*120}px`,minHeight:m.exp>0?'4px':'0',transition:'height 0.6s ease'}}/>
+                      <span style={{fontSize:'10px',color:i===5?ACCENT:'rgba(255,255,255,0.3)',fontWeight:i===5?'700':'400'}}>{m.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
-        {/* ═══════════════════════════════════════ PERSONAL MODE ═══════════════════════════════════════ */}
-        {mode === 'personal' && (
+        {/* ══════════ PERSONAL MODE ══════════ */}
+        {mode==='personal' && (
           <div>
-            {/* ── CLEAR ALL BAR — always visible at top of personal section ── */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.85rem 1.25rem', background: 'rgba(193,18,31,0.06)', border: '1px solid rgba(193,18,31,0.2)', borderRadius: '10px', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+            {/* Clear All bar */}
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'0.85rem 1.25rem',background:'rgba(193,18,31,0.06)',border:'1px solid rgba(193,18,31,0.2)',borderRadius:'12px',marginBottom:'1.5rem',flexWrap:'wrap',gap:'0.75rem'}}>
               <div>
-                <p style={{ margin: 0, color: 'rgba(255,255,255,0.7)', fontSize: '13px', fontWeight: '600' }}>🔄 Start Over with Fresh Data</p>
-                <p style={{ margin: '2px 0 0 0', color: 'rgba(255,255,255,0.35)', fontSize: '11px' }}>Clears all uploaded documents, imported transactions, and resets budget amounts to $0</p>
+                <p style={{margin:0,color:'rgba(255,255,255,0.7)',fontSize:'13px',fontWeight:'600'}}>🔄 Start Over with Fresh Data</p>
+                <p style={{margin:'2px 0 0',color:'rgba(255,255,255,0.35)',fontSize:'11px'}}>Clears all uploaded documents, imported transactions, and resets budgets to $0</p>
               </div>
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                {clearMsg && <span style={{ fontSize: '12px', color: clearMsg.startsWith('✅') ? '#2A9D8F' : '#C1121F', fontWeight: '600' }}>{clearMsg}</span>}
-                {clearConfirm === 'idle' && (
-                  <button onClick={() => setClearConfirm('confirm')}
-                    style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid rgba(193,18,31,0.6)', background: 'rgba(193,18,31,0.12)', color: '#C1121F', fontWeight: '700', fontSize: '13px', cursor: 'pointer', fontFamily: 'Poppins,sans-serif', whiteSpace: 'nowrap' }}>
-                    🗑️ Clear All & Start Fresh
-                  </button>
-                )}
-                {clearConfirm === 'confirm' && (
-                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '12px', color: '#f4a261', fontWeight: '600' }}>⚠️ Deletes all docs + imported transactions. Cannot undo.</span>
-                    <button onClick={clearAllData}
-                      style={{ padding: '8px 18px', borderRadius: '8px', border: 'none', background: '#C1121F', color: '#fff', fontWeight: '700', fontSize: '13px', cursor: 'pointer', fontFamily: 'Poppins,sans-serif', whiteSpace: 'nowrap' }}>
-                      Yes, Clear Everything
-                    </button>
-                    <button onClick={() => setClearConfirm('idle')}
-                      style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.2)', background: 'transparent', color: 'rgba(255,255,255,0.6)', fontSize: '13px', cursor: 'pointer', fontFamily: 'Poppins,sans-serif' }}>
-                      Cancel
-                    </button>
+              <div style={{display:'flex',gap:'0.5rem',alignItems:'center',flexWrap:'wrap'}}>
+                {clearMsg&&<span style={{fontSize:'12px',color:clearMsg.startsWith('✅')?'#2A9D8F':'#C1121F',fontWeight:'600'}}>{clearMsg}</span>}
+                {clearConfirm==='idle'&&<button onClick={()=>setClearConfirm('confirm')} style={{padding:'8px 18px',borderRadius:'8px',border:'1px solid rgba(193,18,31,0.6)',background:'rgba(193,18,31,0.12)',color:'#C1121F',fontWeight:'700',fontSize:'12px',cursor:'pointer',fontFamily:'Poppins,sans-serif',whiteSpace:'nowrap'}}>🗑️ Clear All & Start Fresh</button>}
+                {clearConfirm==='confirm'&&(
+                  <div style={{display:'flex',gap:'0.5rem',alignItems:'center',flexWrap:'wrap'}}>
+                    <span style={{fontSize:'12px',color:'#f4a261',fontWeight:'600'}}>⚠️ Cannot undo.</span>
+                    <button onClick={clearAllData} style={{padding:'8px 18px',borderRadius:'8px',border:'none',background:'#C1121F',color:'#fff',fontWeight:'700',fontSize:'12px',cursor:'pointer',fontFamily:'Poppins,sans-serif'}}>Yes, Clear Everything</button>
+                    <button onClick={()=>setClearConfirm('idle')} style={{padding:'8px 14px',borderRadius:'8px',border:'1px solid rgba(255,255,255,0.2)',background:'transparent',color:'rgba(255,255,255,0.6)',fontSize:'12px',cursor:'pointer',fontFamily:'Poppins,sans-serif'}}>Cancel</button>
                   </div>
                 )}
-                {clearConfirm === 'clearing' && (
-                  <span style={{ fontSize: '13px', color: '#C9A84C', fontWeight: '600' }}>⏳ Clearing all data...</span>
-                )}
+                {clearConfirm==='clearing'&&<span style={{fontSize:'12px',color:ACCENT,fontWeight:'600'}}>⏳ Clearing...</span>}
               </div>
             </div>
 
-            {/* Personal KPIs */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
+            {/* KPIs */}
+            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'1rem',marginBottom:'1.5rem'}}>
               {[
-                { label: 'Personal Income', value: `$${totalPersIncome.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#2A9D8F' },
-                { label: 'Personal Expenses', value: `$${totalPersExpenses.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#C1121F' },
-                { label: 'Net Personal', value: `${(totalPersIncome - totalPersExpenses) >= 0 ? '+' : ''}$${Math.abs(totalPersIncome - totalPersExpenses).toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: totalPersIncome >= totalPersExpenses ? '#2A9D8F' : '#C1121F' },
-                { label: 'Total Budgeted', value: `$${totalPersBudgeted.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#9B5DE5' },
-              ].map(m => (
-                <div key={m.label} className="card-hover" style={card}>
-                  <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{m.label}</p>
-                  <p style={{ margin: '6px 0 0 0', fontSize: '22px', fontWeight: '700', color: m.color }}>{m.value}</p>
+                {label:'Total Income',value:`$${totalPersIncome.toLocaleString(undefined,{maximumFractionDigits:0})}`,sub:`${persTxs.filter(t=>t.type==='income').length} transactions`,color:'#2A9D8F'},
+                {label:'Total Expenses',value:`$${totalPersExpense.toLocaleString(undefined,{maximumFractionDigits:0})}`,sub:`${persTxs.filter(t=>t.type==='expense').length} transactions`,color:'#C1121F'},
+                {label:'Net Cash Flow',value:`${(totalPersIncome-totalPersExpense)>=0?'+':''}$${Math.abs(totalPersIncome-totalPersExpense).toLocaleString(undefined,{maximumFractionDigits:0})}`,sub:(totalPersIncome-totalPersExpense)>=0?'Positive ✓':'Negative ✗',color:(totalPersIncome-totalPersExpense)>=0?'#2A9D8F':'#C1121F'},
+                {label:'Total Budgeted',value:`$${totalPersBudgeted.toLocaleString(undefined,{maximumFractionDigits:0})}`,sub:`${persCats.filter(c=>parseFloat(c.budgeted_amount||0)>0).length} categories`,color:'#9B5DE5'},
+              ].map(k=>(
+                <div key={k.label} style={{...card(),borderLeft:`3px solid ${k.color}`}}>
+                  <p style={{margin:'0 0 6px',fontSize:'11px',color:'rgba(255,255,255,0.4)',textTransform:'uppercase',letterSpacing:'0.6px'}}>{k.label}</p>
+                  <p style={{margin:0,fontSize:'22px',fontWeight:'700',color:k.color,lineHeight:1}}>{k.value}</p>
+                  {k.sub&&<p style={{margin:'4px 0 0',fontSize:'11px',color:'rgba(255,255,255,0.35)'}}>{k.sub}</p>}
                 </div>
               ))}
             </div>
 
-            {/* Build from Documents — the main feature */}
-            <div style={{ ...card, marginBottom: '1.5rem', borderColor: 'rgba(155,93,229,0.4)', background: 'rgba(155,93,229,0.05)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                <div>
-                  <h3 style={{ margin: '0 0 4px 0', color: '#9B5DE5', fontSize: '16px', fontWeight: '700' }}>📄 Build Personal Budget from Your Documents</h3>
-                  <p style={{ margin: 0, color: 'rgba(255,255,255,0.5)', fontSize: '13px' }}>
-                    AI analyzes your {documents.length} uploaded document{documents.length !== 1 ? 's' : ''} and creates a personal budget based on your actual spending patterns
-                  </p>
+            {/* Charts row: Cash Flow Trend + Where Money Goes */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'1.5rem',marginBottom:'1.5rem'}}>
+              {/* Cash flow chart */}
+              <div style={card()}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1.25rem'}}>
+                  <h3 style={{margin:0,color:'#fff',fontSize:'14px',fontWeight:'600',textTransform:'uppercase',letterSpacing:'0.5px'}}>6-Month Cash Flow</h3>
+                  <div style={{display:'flex',gap:'4px'}}>
+                    {(['spending','cashflow'] as const).map(v=>(
+                      <button key={v} onClick={()=>setMonthlyView(v)} style={{padding:'3px 10px',borderRadius:'20px',border:`1px solid ${monthlyView===v?ACCENT:'rgba(255,255,255,0.1)'}`,background:monthlyView===v?`${ACCENT}22`:'transparent',color:monthlyView===v?ACCENT:'rgba(255,255,255,0.4)',fontSize:'10px',fontWeight:'600',cursor:'pointer',fontFamily:'Poppins,sans-serif',textTransform:'capitalize'}}>{v}</button>
+                    ))}
+                  </div>
                 </div>
-                <button className="btn-primary" onClick={buildPersonalBudgetFromDocs} disabled={buildingFromDocs || documents.length === 0}
-                  style={{ padding: '12px 24px', borderRadius: '8px', border: 'none', background: buildingFromDocs || documents.length === 0 ? 'rgba(255,255,255,0.08)' : 'linear-gradient(135deg, #9B5DE5, #2A9D8F)', color: buildingFromDocs || documents.length === 0 ? 'rgba(255,255,255,0.3)' : '#fff', fontWeight: '700', fontSize: '13px', cursor: buildingFromDocs || documents.length === 0 ? 'not-allowed' : 'pointer', fontFamily: 'Poppins,sans-serif', whiteSpace: 'nowrap' }}>
-                  {buildingFromDocs ? '🔮 Building...' : documents.length === 0 ? 'Upload Docs First' : `🔮 Build from ${documents.length} Doc${documents.length !== 1 ? 's' : ''}`}
-                </button>
+                <div style={{display:'flex',alignItems:'flex-end',gap:'6px',height:'140px'}}>
+                  {persMonthly.map((m,i)=>(
+                    <div key={m.key} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:'4px',height:'100%',justifyContent:'flex-end'}}>
+                      {monthlyView==='cashflow' ? (
+                        <div style={{width:'100%',display:'flex',gap:'2px',alignItems:'flex-end',height:'120px'}}>
+                          <div style={{flex:1,background:`rgba(42,157,143,${i===5?0.7:0.35})`,borderRadius:'3px 3px 0 0',height:`${(m.inc/maxBar)*120}px`,minHeight:m.inc>0?'3px':'0',transition:'height 0.6s ease'}}/>
+                          <div style={{flex:1,background:`rgba(193,18,31,${i===5?0.7:0.35})`,borderRadius:'3px 3px 0 0',height:`${(m.exp/maxBar)*120}px`,minHeight:m.exp>0?'3px':'0',transition:'height 0.6s ease'}}/>
+                        </div>
+                      ) : (
+                        <div style={{width:'100%',background:`rgba(193,18,31,${i===5?0.7:0.3})`,borderRadius:'4px 4px 0 0',height:`${(m.exp/maxBar)*120}px`,minHeight:m.exp>0?'4px':'0',transition:'height 0.6s ease'}}/>
+                      )}
+                      <span style={{fontSize:'10px',color:i===5?'rgba(255,255,255,0.7)':'rgba(255,255,255,0.3)',fontWeight:i===5?'700':'400'}}>{m.label}</span>
+                    </div>
+                  ))}
+                </div>
+                {monthlyView==='cashflow'&&(
+                  <div style={{display:'flex',gap:'1rem',marginTop:'0.75rem',justifyContent:'center'}}>
+                    {[['#2A9D8F','Income'],['#C1121F','Spending']].map(([c,l])=>(
+                      <span key={l} style={{display:'flex',alignItems:'center',gap:'5px',fontSize:'11px',color:'rgba(255,255,255,0.4)'}}>
+                        <span style={{width:'10px',height:'10px',borderRadius:'2px',background:c,display:'inline-block'}}/>{l}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
-              {buildMsg && (
-                <div style={{ padding: '10px 14px', background: buildMsg.startsWith('✅') ? 'rgba(42,157,143,0.12)' : 'rgba(193,18,31,0.12)', border: `1px solid ${buildMsg.startsWith('✅') ? 'rgba(42,157,143,0.35)' : 'rgba(193,18,31,0.35)'}`, borderRadius: '8px', color: buildMsg.startsWith('✅') ? '#2A9D8F' : '#ff6b6b', fontSize: '13px', lineHeight: '1.5' }}>
-                  {buildMsg}
-                </div>
-              )}
-              {documents.length === 0 && (
-                <p style={{ margin: '0.75rem 0 0 0', color: 'rgba(255,255,255,0.3)', fontSize: '12px' }}>
-                  No documents yet — go to <strong style={{ color: '#C9A84C' }}>Document Intelligence</strong> to upload bank statements or pay stubs first.
-                </p>
-              )}
+
+              {/* Where money goes — visual donut-style breakdown */}
+              <div style={card()}>
+                <h3 style={{margin:'0 0 1.25rem',color:'#fff',fontSize:'14px',fontWeight:'600',textTransform:'uppercase',letterSpacing:'0.5px'}}>Where Your Money Goes</h3>
+                {topPersSpend.length===0 ? (
+                  <p style={{color:'rgba(255,255,255,0.3)',fontSize:'13px'}}>No expense data yet. Upload documents or add transactions.</p>
+                ) : (
+                  <div>
+                    {/* Visual percentage blocks */}
+                    <div style={{display:'flex',height:'24px',borderRadius:'8px',overflow:'hidden',marginBottom:'1rem',gap:'2px'}}>
+                      {topPersSpend.map(([cat,amt],i)=>(
+                        <div key={cat} title={`${cat}: $${(amt as number).toFixed(0)}`} style={{flex:(amt as number)/totalPersSpendCalc,background:CAT_COLORS[i%12],minWidth:'4px',transition:'flex 0.5s ease'}}/>
+                      ))}
+                    </div>
+                    {topPersSpend.map(([cat,amt],i)=>(
+                      <div key={cat} style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'0.5rem'}}>
+                        <span style={{width:'10px',height:'10px',borderRadius:'3px',background:CAT_COLORS[i%12],flexShrink:0,display:'inline-block'}}/>
+                        <span style={{fontSize:'12px',color:'rgba(255,255,255,0.6)',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{CAT_ICONS[cat]||'📦'} {cat}</span>
+                        <span style={{fontSize:'12px',color:'#fff',fontWeight:'600',whiteSpace:'nowrap'}}>${(amt as number).toLocaleString(undefined,{maximumFractionDigits:0})}</span>
+                        <span style={{fontSize:'10px',color:'rgba(255,255,255,0.3)',width:'30px',textAlign:'right'}}>{(((amt as number)/totalPersSpendCalc)*100).toFixed(0)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
-            {/* Import individual document + Clear All */}
-            {documents.length > 0 && (
-              <div style={{ ...card, marginBottom: '1.5rem' }}>
-                <h3 style={{ margin: '0 0 1rem 0', color: '#fff', fontSize: '15px', fontWeight: '600' }}>📥 Import Transactions from a Specific Document</h3>
-                {importMsg && <div style={{ padding: '10px 14px', background: 'rgba(42,157,143,0.1)', border: '1px solid rgba(42,157,143,0.3)', borderRadius: '8px', color: '#2A9D8F', fontSize: '13px', marginBottom: '1rem' }}>{importMsg}</div>}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                  {documents.map(doc => {
-                    const txCount = (doc.transactions || []).length;
-                    const imported = doc.imported_to_budget === true;
-                    // Income display: use net pay for pay stubs
-                    const dt = (doc.doc_type || '').toLowerCase();
-                    const isPayStub = dt.includes('pay') || dt.includes('stub') || dt.includes('paycheck');
-                    const incomeDisplay = isPayStub
-                      ? (() => { const kf = doc.key_figures || []; const nf = kf.find((k: any) => k.label?.toLowerCase().includes('net pay')); return parseFloat(nf?.value?.replace(/[$,]/g,'') || doc.net_cashflow || doc.total_income || '0'); })()
-                      : parseFloat(doc.total_income || 0);
+            {/* Budget vs Actual progress bars */}
+            {catsWithBudget.length > 0 && (
+              <div style={{...card(),marginBottom:'1.5rem'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1.25rem'}}>
+                  <h3 style={{margin:0,color:'#fff',fontSize:'14px',fontWeight:'600',textTransform:'uppercase',letterSpacing:'0.5px'}}>Budget vs Actual</h3>
+                  <button onClick={()=>setShowAddCat(!showAddCat)} style={{padding:'6px 14px',borderRadius:'8px',border:'1px solid rgba(255,255,255,0.1)',background:'transparent',color:'rgba(255,255,255,0.5)',fontSize:'12px',cursor:'pointer',fontFamily:'Poppins,sans-serif'}}>+ Add Category</button>
+                </div>
+                {showAddCat && (
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'0.75rem',padding:'1rem',background:'rgba(255,255,255,0.03)',borderRadius:'10px',marginBottom:'1rem'}}>
+                    <div><label>Category Name</label><input value={newCat.name} onChange={e=>setNewCat({...newCat,name:e.target.value})} placeholder="e.g. Dining Out"/></div>
+                    <div><label>Type</label><select value={newCat.type} onChange={e=>setNewCat({...newCat,type:e.target.value as any})}><option value="expense">Expense</option><option value="income">Income</option></select></div>
+                    <div><label>Monthly Budget ($)</label><input type="number" value={newCat.budgeted_amount} onChange={e=>setNewCat({...newCat,budgeted_amount:e.target.value})} placeholder="0"/></div>
+                    <div><label>Icon</label><input value={newCat.icon} onChange={e=>setNewCat({...newCat,icon:e.target.value})} placeholder="💰"/></div>
+                    <div style={{gridColumn:'span 4',display:'flex',gap:'0.5rem'}}>
+                      <button onClick={addCategory} style={{padding:'8px 20px',borderRadius:'8px',border:'none',background:ACCENT,color:'#1A1A2E',fontWeight:'700',fontSize:'13px',cursor:'pointer',fontFamily:'Poppins,sans-serif'}}>Add</button>
+                      <button onClick={()=>setShowAddCat(false)} style={{padding:'8px 16px',borderRadius:'8px',border:'1px solid rgba(255,255,255,0.1)',background:'transparent',color:'rgba(255,255,255,0.4)',fontSize:'13px',cursor:'pointer',fontFamily:'Poppins,sans-serif'}}>Cancel</button>
+                    </div>
+                  </div>
+                )}
+                <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:'1rem'}}>
+                  {catsWithBudget.map((cat,i) => {
+                    const spent = spendByPersCat[cat.name]||0;
+                    const budget = parseFloat(cat.budgeted_amount||0);
+                    const pct = budget>0?Math.min(100,(spent/budget)*100):0;
+                    const over = spent>budget && budget>0;
+                    const barColor = over?'#C1121F':pct>80?'#f4a261':'#2A9D8F';
                     return (
-                      <div key={doc.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: '1rem', alignItems: 'center', padding: '0.85rem 1rem', background: imported ? 'rgba(42,157,143,0.04)' : 'rgba(255,255,255,0.03)', borderRadius: '8px', border: `1px solid ${imported ? 'rgba(42,157,143,0.2)' : 'rgba(255,255,255,0.06)'}` }}>
-                        <div>
-                          <p style={{ margin: 0, color: '#fff', fontWeight: '500', fontSize: '13px' }}>{doc.file_name}</p>
-                          <p style={{ margin: 0, color: 'rgba(255,255,255,0.35)', fontSize: '11px' }}>
-                            {doc.doc_type}{doc.period ? ` • ${doc.period}` : ''} • {txCount} transaction{txCount !== 1 ? 's' : ''}
-                            {imported && doc.imported_at && <span style={{ color: 'rgba(42,157,143,0.6)', marginLeft: '6px' }}>• imported {new Date(doc.imported_at).toLocaleDateString()}</span>}
-                          </p>
+                      <div key={cat.id} className="hover-row" style={{padding:'1rem',background:'rgba(255,255,255,0.02)',borderRadius:'12px',border:`1px solid ${over?'rgba(193,18,31,0.3)':'rgba(255,255,255,0.06)'}`,transition:'background 0.15s'}}>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'8px'}}>
+                          <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                            <span style={{fontSize:'18px'}}>{cat.icon||CAT_ICONS[cat.name]||'💰'}</span>
+                            <div>
+                              <p style={{margin:0,fontSize:'13px',color:'#fff',fontWeight:'600'}}>{cat.name}</p>
+                              <p style={{margin:0,fontSize:'10px',color:'rgba(255,255,255,0.3)',textTransform:'uppercase',letterSpacing:'0.4px'}}>{cat.type}</p>
+                            </div>
+                          </div>
+                          <div style={{textAlign:'right'}}>
+                            {editBudgetId===cat.id ? (
+                              <div style={{display:'flex',gap:'4px',alignItems:'center'}}>
+                                <input type="number" value={editBudgetVal} onChange={e=>setEditBudgetVal(e.target.value)} style={{width:'80px',padding:'4px 8px',fontSize:'12px'}} autoFocus onKeyDown={e=>e.key==='Enter'&&savePersBudget(cat.id)} />
+                                <button onClick={()=>savePersBudget(cat.id)} style={{padding:'4px 8px',borderRadius:'5px',border:'none',background:ACCENT,color:'#1A1A2E',fontWeight:'700',fontSize:'11px',cursor:'pointer',fontFamily:'Poppins,sans-serif'}}>✓</button>
+                              </div>
+                            ) : (
+                              <button onClick={()=>{setEditBudgetId(cat.id);setEditBudgetVal(cat.budgeted_amount?.toString()||'0');}} style={{background:'none',border:'none',color:'rgba(255,255,255,0.2)',cursor:'pointer',fontSize:'11px',fontFamily:'Poppins,sans-serif',textAlign:'right',padding:0}}>
+                                {budget>0?`$${budget.toLocaleString()} ✏️`:'Set budget ✏️'}
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        <span style={{ fontSize: '13px', color: '#2A9D8F', fontWeight: '600', whiteSpace: 'nowrap' }}>+${incomeDisplay.toLocaleString(undefined, {maximumFractionDigits: 2})}</span>
-                        <span style={{ fontSize: '13px', color: '#C1121F', fontWeight: '600', whiteSpace: 'nowrap' }}>-${parseFloat(doc.total_expenses || 0).toLocaleString(undefined, {maximumFractionDigits: 2})}</span>
-                        {imported ? (
-                          <span style={{ padding: '5px 12px', borderRadius: '8px', background: 'rgba(42,157,143,0.12)', color: '#2A9D8F', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap' }}>✅ Imported</span>
-                        ) : txCount === 0 ? (
-                          <span style={{ padding: '5px 12px', borderRadius: '8px', background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.25)', fontSize: '12px', whiteSpace: 'nowrap' }}>No transactions</span>
-                        ) : (
-                          <button onClick={() => importDocToPersonal(doc)} disabled={importing === doc.id}
-                            style={{ padding: '7px 14px', borderRadius: '8px', border: 'none', background: importing === doc.id ? 'rgba(155,93,229,0.15)' : '#9B5DE5', color: '#fff', fontWeight: '600', fontSize: '12px', cursor: importing === doc.id ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', fontFamily: 'Poppins,sans-serif' }}>
-                            {importing === doc.id ? '⏳ Importing...' : `Import ${txCount}`}
-                          </button>
-                        )}
+                        <div style={{height:'6px',background:'rgba(255,255,255,0.07)',borderRadius:'4px',overflow:'hidden',marginBottom:'6px'}}>
+                          <div className="budget-bar" style={{height:'100%',width:`${Math.min(100,pct)}%`,background:barColor,borderRadius:'4px',boxShadow:`0 0 6px ${barColor}44`}}/>
+                        </div>
+                        <div style={{display:'flex',justifyContent:'space-between',fontSize:'11px'}}>
+                          <span style={{color:over?'#C1121F':barColor,fontWeight:'600'}}>${spent.toLocaleString(undefined,{maximumFractionDigits:0})} spent{over?` ⚠️`:''}</span>
+                          <span style={{color:'rgba(255,255,255,0.3)'}}>{budget>0?`$${(budget-spent>0?budget-spent:0).toLocaleString(undefined,{maximumFractionDigits:0})} left • ${pct.toFixed(0)}%`:'No budget set'}</span>
+                        </div>
                       </div>
                     );
                   })}
@@ -543,63 +480,57 @@ export default function Budgets() {
               </div>
             )}
 
-            {/* Budget Categories grid */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h3 style={{ margin: 0, color: '#fff', fontSize: '15px', fontWeight: '600' }}>Budget Categories ({persCats.length})</h3>
-              <button className="btn-primary" onClick={() => setShowPersForm(!showPersForm)} style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: '#9B5DE5', color: '#fff', fontWeight: '600', fontSize: '13px', cursor: 'pointer', fontFamily: 'Poppins,sans-serif' }}>+ Add Category</button>
-            </div>
-
-            {showPersForm && (
-              <div style={{ ...card, marginBottom: '1rem', borderColor: 'rgba(155,93,229,0.4)' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
-                  <div style={{ gridColumn: 'span 2' }}><label>Category Name</label><input value={persForm.name} onChange={e => setPersForm({ ...persForm, name: e.target.value })} placeholder="e.g. Dining Out" /></div>
-                  <div><label>Type</label><select value={persForm.type} onChange={e => setPersForm({ ...persForm, type: e.target.value })}><option value="expense">Expense</option><option value="income">Income</option></select></div>
-                  <div><label>Monthly Budget ($)</label><input type="number" value={persForm.budgeted_amount} onChange={e => setPersForm({ ...persForm, budgeted_amount: e.target.value })} placeholder="0" /></div>
-                  <div><label>Icon (emoji)</label><input value={persForm.icon} onChange={e => setPersForm({ ...persForm, icon: e.target.value })} placeholder="💰" style={{ maxWidth: '80px !important' }} /></div>
-                </div>
-                <div style={{ display: 'flex', gap: '0.75rem' }}>
-                  <button className="btn-primary" onClick={addPersCat} style={{ padding: '10px 24px', borderRadius: '8px', border: 'none', background: '#9B5DE5', color: '#fff', fontWeight: '700', cursor: 'pointer', fontFamily: 'Poppins,sans-serif' }}>Add</button>
-                  <button onClick={() => setShowPersForm(false)} style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.2)', background: 'transparent', color: 'rgba(255,255,255,0.6)', cursor: 'pointer' }}>Cancel</button>
-                </div>
+            {/* AI Build + Import Documents */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'1.5rem',marginBottom:'1.5rem'}}>
+              <div style={{...card(),borderColor:'rgba(155,93,229,0.25)',background:'rgba(155,93,229,0.04)'}}>
+                <h3 style={{margin:'0 0 0.5rem',color:'#9B5DE5',fontSize:'14px',fontWeight:'600'}}>🤖 AI Budget Builder</h3>
+                <p style={{margin:'0 0 1rem',color:'rgba(255,255,255,0.4)',fontSize:'12px',lineHeight:'1.6'}}>Upload documents first, then let AI analyze your actual spending and build a realistic monthly budget automatically.</p>
+                <button onClick={buildBudgetFromDocs} disabled={aiBuilding||documents.length===0}
+                  style={{padding:'10px 20px',borderRadius:'10px',border:'none',background:aiBuilding?'rgba(155,93,229,0.2)':'#9B5DE5',color:'#fff',fontWeight:'700',fontSize:'13px',cursor:aiBuilding||documents.length===0?'not-allowed':'pointer',fontFamily:'Poppins,sans-serif',width:'100%',opacity:documents.length===0?0.5:1}}>
+                  {aiBuilding?'🤖 Building Budget...':'🤖 Build Budget from Documents'}
+                </button>
+                {buildMsg&&<p style={{margin:'0.75rem 0 0',fontSize:'12px',color:buildMsg.startsWith('✅')?'#2A9D8F':'#C1121F',lineHeight:'1.5'}}>{buildMsg}</p>}
+                {documents.length===0&&<p style={{margin:'0.5rem 0 0',fontSize:'11px',color:'rgba(255,255,255,0.25)'}}>No documents yet — upload bank statements or pay stubs first.</p>}
               </div>
-            )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '0.75rem' }}>
-              {persCats.map(cat => {
-                const spent = spendByPersCat[cat.name] || 0;
-                const budget = parseFloat(cat.budgeted_amount || 0);
-                const pct = budget > 0 ? Math.min(100, (spent / budget) * 100) : 0;
-                const over = budget > 0 && spent > budget;
-                return (
-                  <div key={cat.id} className="card-hover" style={{ ...card, borderLeft: `3px solid ${cat.color || '#9B5DE5'}` }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontSize: '1.2rem' }}>{cat.icon}</span>
-                        <p style={{ margin: 0, color: '#fff', fontWeight: '600', fontSize: '13px' }}>{cat.name}</p>
-                      </div>
-                      <span style={{ fontSize: '10px', padding: '2px 7px', borderRadius: '20px', background: cat.type === 'income' ? 'rgba(42,157,143,0.15)' : 'rgba(193,18,31,0.12)', color: cat.type === 'income' ? '#2A9D8F' : '#C1121F', fontWeight: '600' }}>{cat.type}</span>
-                    </div>
-                    {budget > 0 ? (
-                      <>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', margin: '6px 0 4px 0' }}>
-                          <span style={{ fontSize: '12px', color: over ? '#C1121F' : 'rgba(255,255,255,0.4)' }}>${spent.toFixed(0)} spent{over ? ' ⚠️' : ''}</span>
-                          <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)' }}>${budget.toFixed(0)} budget</span>
+              {/* Import from document */}
+              <div style={card()}>
+                <h3 style={{margin:'0 0 1rem',color:'#fff',fontSize:'14px',fontWeight:'600'}}>📥 Import from Document</h3>
+                {importMsg&&<div style={{padding:'8px 12px',background:'rgba(42,157,143,0.1)',border:'1px solid rgba(42,157,143,0.3)',borderRadius:'8px',color:'#2A9D8F',fontSize:'12px',marginBottom:'0.75rem'}}>{importMsg}</div>}
+                {documents.length===0 ? (
+                  <p style={{color:'rgba(255,255,255,0.3)',fontSize:'12px'}}>No documents uploaded. Go to Documents to upload files first.</p>
+                ) : (
+                  <div style={{display:'flex',flexDirection:'column',gap:'0.5rem',maxHeight:'280px',overflowY:'auto'}}>
+                    {documents.map(doc=>{
+                      const txCount=(doc.transactions||[]).length;
+                      const imported=doc.imported_to_budget===true;
+                      const dt=(doc.doc_type||'').toLowerCase();
+                      const isPayStub=dt.includes('pay')||dt.includes('stub');
+                      const incAmt=isPayStub?(() => {const kf=doc.key_figures||[];const nf=kf.find((k:any)=>k.label?.toLowerCase().includes('net pay'));return parseFloat(nf?.value?.replace(/[$,]/g,'')||doc.net_cashflow||doc.total_income||'0');})():parseFloat(doc.total_income||0);
+                      return (
+                        <div key={doc.id} style={{display:'grid',gridTemplateColumns:'1fr auto auto auto',gap:'0.75rem',alignItems:'center',padding:'0.7rem 0.85rem',background:imported?'rgba(42,157,143,0.05)':'rgba(255,255,255,0.03)',borderRadius:'8px',border:`1px solid ${imported?'rgba(42,157,143,0.2)':'rgba(255,255,255,0.06)'}`}}>
+                          <div style={{minWidth:0}}>
+                            <p style={{margin:0,color:'#fff',fontWeight:'500',fontSize:'12px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{doc.file_name}</p>
+                            <p style={{margin:'1px 0 0',color:'rgba(255,255,255,0.3)',fontSize:'10px'}}>{doc.doc_type}{doc.period?` • ${doc.period}`:''} • {txCount} tx</p>
+                          </div>
+                          <span style={{fontSize:'11px',color:'#2A9D8F',fontWeight:'600',whiteSpace:'nowrap'}}>+${incAmt.toLocaleString(undefined,{maximumFractionDigits:0})}</span>
+                          <span style={{fontSize:'11px',color:'#C1121F',fontWeight:'600',whiteSpace:'nowrap'}}>-${parseFloat(doc.total_expenses||0).toLocaleString(undefined,{maximumFractionDigits:0})}</span>
+                          {imported ? (
+                            <span style={{padding:'3px 10px',borderRadius:'20px',background:'rgba(42,157,143,0.15)',color:'#2A9D8F',fontSize:'10px',fontWeight:'700',whiteSpace:'nowrap'}}>✅ Done</span>
+                          ) : txCount===0 ? (
+                            <span style={{padding:'3px 10px',borderRadius:'20px',background:'rgba(255,255,255,0.04)',color:'rgba(255,255,255,0.2)',fontSize:'10px',whiteSpace:'nowrap'}}>No data</span>
+                          ) : (
+                            <button onClick={()=>importDocToPersonal(doc)} disabled={importing===doc.id}
+                              style={{padding:'4px 12px',borderRadius:'20px',border:'none',background:importing===doc.id?'rgba(155,93,229,0.2)':'#9B5DE5',color:'#fff',fontWeight:'700',fontSize:'10px',cursor:'pointer',fontFamily:'Poppins,sans-serif',whiteSpace:'nowrap'}}>
+                              {importing===doc.id?'⏳':'Import'}
+                            </button>
+                          )}
                         </div>
-                        <div style={{ background: 'rgba(255,255,255,0.07)', borderRadius: '3px', height: '5px', overflow: 'hidden' }}>
-                          <div style={{ height: '100%', width: `${pct}%`, background: over ? '#C1121F' : (cat.color || '#9B5DE5'), borderRadius: '3px', transition: 'width 0.4s ease' }} />
-                        </div>
-                        <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
-                          <input type="number" defaultValue={budget} onBlur={e => updatePersCatBudget(cat.id, parseFloat(e.target.value) || 0)} style={{ fontSize: '12px !important', padding: '4px 8px !important' }} />
-                        </div>
-                      </>
-                    ) : (
-                      <div style={{ marginTop: '6px' }}>
-                        <input type="number" placeholder="Set budget amount" onBlur={e => { if (e.target.value) updatePersCatBudget(cat.id, parseFloat(e.target.value)); }} style={{ fontSize: '12px !important', padding: '4px 8px !important' }} />
-                      </div>
-                    )}
+                      );
+                    })}
                   </div>
-                );
-              })}
+                )}
+              </div>
             </div>
           </div>
         )}
