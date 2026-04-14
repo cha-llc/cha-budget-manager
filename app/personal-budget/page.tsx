@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import Layout from '@/components/Layout';
 import { supabase } from '@/lib/supabase';
+import { buildPersonalInserts } from '@/lib/docRouting';
 
 const card = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(201,168,76,0.2)', borderRadius: '12px', padding: '1.5rem' } as const;
 
@@ -46,7 +47,7 @@ export default function PersonalBudget() {
       description: txForm.description,
       amount: parseFloat(txForm.amount),
       type: txForm.type,
-      category_name: txForm.category_name || 'Uncategorized',
+      category_name: txForm.category_name || (txForm.type === 'income' ? 'Other Income' : 'Personal Care'),
       category_id: cat?.id || null,
       date: txForm.date,
       source: 'manual',
@@ -74,35 +75,31 @@ export default function PersonalBudget() {
   };
 
   // Import transactions from a document into personal budget
+  // Uses shared docRouting library — proper categorization, no Uncategorized
   const importFromDocument = async (doc: any) => {
     setImporting(doc.id);
     setImportMsg('');
     try {
-      const txs = doc.transactions || [];
-      if (txs.length === 0) { setImportMsg('No transactions found in this document.'); setImporting(null); return; }
-
-      const inserts = txs.map((tx: any) => ({
-        description: tx.description || 'Imported transaction',
-        amount: Math.abs(tx.amount || 0),
-        type: tx.type === 'credit' ? 'income' : 'expense',
-        category_name: tx.type === 'credit' ? 'Other Income' : 'Uncategorized',
-        date: tx.date || doc.uploaded_at?.split('T')[0] || new Date().toISOString().split('T')[0],
-        source: `document:${doc.file_name}`,
-        source_doc_id: doc.id,
-      }));
-
-      const { data } = await supabase.from('personal_transactions').insert(inserts).select();
+      const inserts = buildPersonalInserts(doc, doc.file_name, doc.id);
+      if (!inserts.length) {
+        setImportMsg('No importable transactions found in this document.');
+        setImporting(null);
+        return;
+      }
+      const { data, error } = await supabase.from('personal_transactions').insert(inserts).select();
+      if (error) throw error;
       if (data) {
         setTransactions(prev => [...data, ...prev]);
-        setImportMsg(`✅ Imported ${data.length} transactions from ${doc.file_name}`);
-        // Mark document as including personal data
+        const incomeCount = inserts.filter(i => i.type === 'income').length;
+        const expCount = inserts.filter(i => i.type === 'expense').length;
+        setImportMsg(`✅ Imported ${incomeCount} income + ${expCount} expense transactions from ${doc.file_name} — all categorized`);
         await supabase.from('budget_documents').update({ budget_type: 'both' }).eq('id', doc.id);
       }
-    } catch (e) {
-      setImportMsg('Import failed. Try again.');
+    } catch (e: any) {
+      setImportMsg('Import failed: ' + (e?.message || 'unknown error'));
     }
     setImporting(null);
-    setTimeout(() => setImportMsg(''), 5000);
+    setTimeout(() => setImportMsg(''), 6000);
   };
 
   const getAIInsight = async () => {

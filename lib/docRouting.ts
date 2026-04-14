@@ -50,10 +50,15 @@ export function matchPersonalCategory(description: string, type: 'income' | 'exp
     if (d.includes('transfer') || d.includes('ach')) return 'Other Income';
     return 'Other Income';
   } else {
-    // Tax-related
-    if (d.includes('federal') || d.includes('state tax') || d.includes('fica') || d.includes('social security') || d.includes('medicare') || d.includes('income tax')) return 'Taxes';
-    // Insurance / health
-    if (d.includes('medical') || d.includes('dental') || d.includes('vision') || d.includes('health insurance') || d.includes('hospital insurance') || d.includes('125 medical')) return 'Health & Wellness';
+    // Granular tax deduction categories (pay stub line items)
+    if (d.includes('federal income tax') || d.includes('federal tax') || d.includes('fed tax')) return 'Federal Income Tax';
+    if (d.includes('social security') || d.includes('fica') || d.includes('soc sec')) return 'Social Security';
+    if (d.includes('medicare')) return 'Medicare';
+    if (d.includes('state tax') || d.includes('state income')) return 'State Income Tax';
+    // General tax catch-all
+    if (d.includes('income tax') || d.includes('tax withheld') || d.includes('withholding')) return 'Taxes';
+    // Insurance / health (keep grouped for readability)
+    if (d.includes('medical') || d.includes('dental') || d.includes('vision') || d.includes('health insurance') || d.includes('hospital insurance') || d.includes('125 medical') || d.includes('id theft')) return 'Health & Wellness';
     // Retirement / savings
     if (d.includes('401k') || d.includes('401(k)') || d.includes('retirement') || d.includes('emergency fund')) return 'Emergency Fund';
     if (d.includes('deposit to savings') || d.includes('savings deposit') || d.includes('savings account')) return 'Savings';
