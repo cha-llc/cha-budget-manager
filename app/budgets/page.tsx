@@ -2,6 +2,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { buildPersonalInserts, buildBusinessExpenseInserts } from '@/lib/docRouting';
 import Layout from '@/components/Layout';
 import { supabase } from '@/lib/supabase';
 
@@ -148,145 +149,29 @@ export default function Budgets() {
     }
   };
 
-  // Import transactions from a document into personal budget — smart filtering by doc type
+  // Import transactions from a document into personal budget
+  // Uses shared docRouting library — same logic as documents page
   const importDocToPersonal = async (doc: any) => {
     setImporting(doc.id); setImportMsg('');
     try {
-      const txs: any[] = doc.transactions || [];
-      const docTypeLower = (doc.doc_type || '').toLowerCase();
-      const isPayStub = docTypeLower.includes('pay') || docTypeLower.includes('stub') || docTypeLower.includes('paycheck') || docTypeLower.includes('payroll');
-      const isBankStatement = docTypeLower.includes('bank') || docTypeLower.includes('statement') || docTypeLower.includes('checking') || docTypeLower.includes('savings');
-      const fallbackDate = doc.uploaded_at?.split('T')[0] || new Date().toISOString().split('T')[0];
-
-      let inserts: any[] = [];
-
-      if (isPayStub) {
-        // For pay stubs: import NET PAY as one income entry + meaningful deductions
-        // Find net pay from key_figures first, fall back to net_cashflow
-        const kf = doc.key_figures || [];
-        const netPayFigure = kf.find((k: any) => k.label?.toLowerCase().includes('net pay') || k.label?.toLowerCase() === 'net amount');
-        const netPayAmount = netPayFigure
-          ? parseFloat(netPayFigure.value?.replace(/[$,]/g, '') || '0')
-          : parseFloat(doc.net_cashflow || doc.total_income || '0');
-
-        const payDate = txs[0]?.date || fallbackDate;
-        const period = doc.period || 'Pay Period';
-
-        // One income entry for net pay
-        if (netPayAmount > 0) {
-          inserts.push({
-            description: `Net Pay — ${period}`,
-            amount: netPayAmount,
-            type: 'income',
-            category_name: 'Salary / Wages',
-            date: payDate,
-            source: `document:${doc.file_name}`,
-            source_doc_id: doc.id,
-          });
-        }
-
-        // Import meaningful deductions (skip 401k transfers to savings — those show up as deposits too)
-        const skipDeductions = ['deposit to checking', 'deposit to savings', 'savings deposit', 'direct deposit'];
-        const deductions = txs.filter((tx: any) => {
-          if (tx.type !== 'debit') return false;
-          const desc = (tx.description || '').toLowerCase();
-          return !skipDeductions.some(s => desc.includes(s));
-        });
-
-        deductions.forEach((tx: any) => {
-          inserts.push({
-            description: tx.description,
-            amount: Math.abs(parseFloat(tx.amount) || 0),
-            type: 'expense',
-            category_name: matchCategory(tx.description, 'expense'),
-            date: tx.date || payDate,
-            source: `document:${doc.file_name}`,
-            source_doc_id: doc.id,
-          });
-        });
-
-      } else if (isBankStatement) {
-        // For bank statements: import all transactions with smart categorization
-        // Skip duplicate internal transfers (e.g. if same amount appears as both credit and debit same day)
-        txs.forEach((tx: any) => {
-          const amount = Math.abs(parseFloat(tx.amount) || 0);
-          if (amount === 0) return;
-          const type = tx.type === 'credit' ? 'income' : 'expense';
-          inserts.push({
-            description: tx.description || 'Bank Transaction',
-            amount,
-            type,
-            category_name: matchCategory(tx.description || '', type),
-            date: tx.date || fallbackDate,
-            source: `document:${doc.file_name}`,
-            source_doc_id: doc.id,
-          });
-        });
-
-      } else if (docTypeLower.includes('tax') || docTypeLower.includes('w2') || docTypeLower.includes('1099')) {
-        // Tax forms (W2, 1099): income = Box 1 wages, expenses = taxes withheld
-        const kf = doc.key_figures || [];
-        const box1 = kf.find((k: any) => k.label?.toLowerCase().includes('box 1') || k.label?.toLowerCase().includes('wages') || k.label?.toLowerCase().includes('compensation'));
-        const taxWithheld = kf.find((k: any) => k.label?.toLowerCase().includes('withheld') || k.label?.toLowerCase().includes('federal income tax'));
-        if (box1) {
-          inserts.push({
-            description: `W2/1099 Income — ${doc.period || doc.file_name}`,
-            amount: parseFloat(box1.value?.replace(/[$,]/g, '') || '0'),
-            type: 'income', category_name: 'Salary / Wages',
-            date: fallbackDate, source: `document:${doc.file_name}`, source_doc_id: doc.id,
-          });
-        }
-        if (taxWithheld) {
-          inserts.push({
-            description: `Federal Tax Withheld — ${doc.period || doc.file_name}`,
-            amount: parseFloat(taxWithheld.value?.replace(/[$,]/g, '') || '0'),
-            type: 'expense', category_name: 'Taxes',
-            date: fallbackDate, source: `document:${doc.file_name}`, source_doc_id: doc.id,
-          });
-        }
-        // Fallback to transaction list if no key figures found
-        if (!box1 && txs.length > 0) {
-          txs.forEach((tx: any) => {
-            const amount = Math.abs(parseFloat(tx.amount) || 0);
-            if (amount === 0) return;
-            const type = tx.type === 'credit' ? 'income' : 'expense';
-            inserts.push({
-              description: tx.description || 'Tax Form Entry', amount, type,
-              category_name: type === 'income' ? 'Salary / Wages' : 'Taxes',
-              date: tx.date || fallbackDate, source: `document:${doc.file_name}`, source_doc_id: doc.id,
-            });
-          });
-        }
-      } else {
-        // Receipts, invoices, other: import as-is with smart categorization
-        txs.forEach((tx: any) => {
-          const amount = Math.abs(parseFloat(tx.amount) || 0);
-          if (amount === 0) return;
-          const type = tx.type === 'credit' ? 'income' : 'expense';
-          inserts.push({
-            description: tx.description || 'Transaction',
-            amount, type,
-            category_name: matchCategory(tx.description || '', type),
-            date: tx.date || fallbackDate,
-            source: `document:${doc.file_name}`,
-            source_doc_id: doc.id,
-          });
-        });
+      const inserts = buildPersonalInserts(doc, doc.file_name, doc.id);
+      if (!inserts.length) {
+        setImportMsg('No importable transactions found in this document.');
+        setImporting(null);
+        return;
       }
-
-      if (!inserts.length) { setImportMsg('No importable transactions found in this document.'); setImporting(null); return; }
-
-      const { data } = await supabase.from('personal_transactions').insert(inserts).select();
+      const { data, error } = await supabase.from('personal_transactions').insert(inserts).select();
+      if (error) throw error;
       if (data) {
         setPersTxs(prev => [...data, ...prev]);
         await supabase.from('budget_documents').update({ budget_type: 'both' }).eq('id', doc.id);
         const incomeCount = inserts.filter(i => i.type === 'income').length;
         const expenseCount = inserts.filter(i => i.type === 'expense').length;
-        setImportMsg(`✅ Imported from "${doc.file_name}": ${incomeCount} income item${incomeCount !== 1 ? 's' : ''}, ${expenseCount} expense item${expenseCount !== 1 ? 's' : ''} — all categorized automatically`);
+        setImportMsg(`✅ Imported from "${doc.file_name}": ${incomeCount} income item${incomeCount !== 1 ? 's' : ''}, ${expenseCount} expense item${expenseCount !== 1 ? 's' : ''} — categorized automatically`);
       }
     } catch (e: any) {
       console.error('Import error:', e);
-      setImportMsg('Import failed. Try again.');
+      setImportMsg('Import failed: ' + (e?.message || 'unknown error'));
     }
     setImporting(null);
     setTimeout(() => setImportMsg(''), 8000);

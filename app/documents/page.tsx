@@ -2,6 +2,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { normalizeDocType, defaultDestination, buildPersonalInserts, buildBusinessExpenseInserts, buildBusinessRevenueInserts } from '@/lib/docRouting';
 import Layout from '@/components/Layout';
 import { supabase } from '@/lib/supabase';
 
@@ -300,117 +301,34 @@ export default function Documents() {
     }
   };
 
+  // Routing via shared lib — single source of truth, no duplication
   const routeTransactions = async (item: QueuedFile, parsed: any, docId: string | null) => {
     const dest = item.destination;
-    const docType = (parsed.doc_type || item.docType || '').toLowerCase();
-    const isPayStub = docType.includes('pay') || docType.includes('stub') || docType.includes('paycheck');
-    const isTaxForm = docType.includes('tax') || docType.includes('w2') || docType.includes('1099');
 
-    // ── PERSONAL ROUTING ──
     if (dest === 'personal' || dest === 'both') {
-      const personalInserts: any[] = [];
-      const fallbackDate = parsed.transactions?.[0]?.date || new Date().toISOString().split('T')[0];
-      const kf = parsed.key_figures || [];
-
-      if (isPayStub) {
-        const netPayFig = kf.find((k: any) => k.label?.toLowerCase().includes('net pay'));
-        const netPay = netPayFig
-          ? parseFloat(netPayFig.value?.replace(/[$,]/g, '') || '0')
-          : parseFloat(parsed.net_cashflow || '0');
-        if (netPay > 0) {
-          personalInserts.push({
-            description: `Net Pay — ${parsed.period || 'Pay Period'}`,
-            amount: netPay, type: 'income', category_name: 'Salary / Wages',
-            date: fallbackDate, source: `document:${item.file.name}`, source_doc_id: docId,
-          });
-        }
-        const skipDescs = ['deposit to checking', 'deposit to savings', 'direct deposit', 'savings deposit'];
-        (parsed.transactions || []).filter((t: any) => {
-          if (t.type !== 'debit') return false;
-          return !skipDescs.some(s => (t.description || '').toLowerCase().includes(s));
-        }).forEach((t: any) => {
-          const d = (t.description || '').toLowerCase();
-          let cat = 'Personal Care';
-          if (d.includes('federal') || d.includes('state tax') || d.includes('fica') || d.includes('social security') || d.includes('medicare')) cat = 'Taxes';
-          else if (d.includes('medical') || d.includes('dental') || d.includes('vision') || d.includes('health') || d.includes('hospital')) cat = 'Health & Wellness';
-          else if (d.includes('401k') || d.includes('401(k)') || d.includes('retirement')) cat = 'Emergency Fund';
-          else if (d.includes('savings')) cat = 'Savings';
-          personalInserts.push({ description: t.description, amount: Math.abs(parseFloat(t.amount) || 0), type: 'expense', category_name: cat, date: t.date || fallbackDate, source: `document:${item.file.name}`, source_doc_id: docId });
-        });
-      } else if (isTaxForm) {
-        const box1 = kf.find((k: any) => k.label?.toLowerCase().includes('box 1') || k.label?.toLowerCase().includes('wages') || k.label?.toLowerCase().includes('compensation'));
-        const withheld = kf.find((k: any) => k.label?.toLowerCase().includes('withheld') || k.label?.toLowerCase().includes('federal income tax'));
-        if (box1) personalInserts.push({ description: `W2/1099 Income — ${parsed.period || item.file.name}`, amount: parseFloat(box1.value?.replace(/[$,]/g, '') || '0'), type: 'income', category_name: 'Salary / Wages', date: fallbackDate, source: `document:${item.file.name}`, source_doc_id: docId });
-        if (withheld) personalInserts.push({ description: `Federal Tax Withheld — ${parsed.period || item.file.name}`, amount: parseFloat(withheld.value?.replace(/[$,]/g, '') || '0'), type: 'expense', category_name: 'Taxes', date: fallbackDate, source: `document:${item.file.name}`, source_doc_id: docId });
-        // Fallback to transactions
-        if (!box1 && (parsed.transactions || []).length > 0) {
-          (parsed.transactions || []).filter((t: any) => Math.abs(parseFloat(t.amount) || 0) > 0).forEach((t: any) => {
-            const type = t.type === 'credit' ? 'income' : 'expense';
-            personalInserts.push({ description: t.description || 'Tax Form Entry', amount: Math.abs(parseFloat(t.amount) || 0), type, category_name: type === 'income' ? 'Salary / Wages' : 'Taxes', date: t.date || fallbackDate, source: `document:${item.file.name}`, source_doc_id: docId });
-          });
-        }
-      } else {
-        // Bank statement, investment, utility, other → route all transactions
-        (parsed.transactions || []).filter((t: any) => Math.abs(parseFloat(t.amount) || 0) > 0).forEach((t: any) => {
-          const type = t.type === 'credit' ? 'income' : 'expense';
-          const d = (t.description || '').toLowerCase();
-          let cat = type === 'income' ? 'Other Income' : 'Personal Care';
-          if (type === 'income') {
-            if (d.includes('payroll') || d.includes('direct deposit') || d.includes('salary') || d.includes('net pay')) cat = 'Salary / Wages';
-            else if (d.includes('transfer') || d.includes('interest') || d.includes('refund')) cat = 'Other Income';
-          } else {
-            if (d.includes('rent') || d.includes('mortgage') || d.includes('lease')) cat = 'Housing / Rent';
-            else if (d.includes('food') || d.includes('grocery') || d.includes('walmart') || d.includes('kroger') || d.includes('publix') || d.includes('aldi') || d.includes('whole foods')) cat = 'Food & Groceries';
-            else if (d.includes('gas') || d.includes('uber') || d.includes('lyft') || d.includes('transport') || d.includes('airline') || d.includes('flight')) cat = 'Transportation';
-            else if (d.includes('medical') || d.includes('dental') || d.includes('health') || d.includes('pharmacy') || d.includes('doctor')) cat = 'Health & Wellness';
-            else if (d.includes('netflix') || d.includes('spotify') || d.includes('entertainment') || d.includes('amazon prime') || d.includes('hulu')) cat = 'Entertainment';
-            else if (d.includes('savings')) cat = 'Savings';
-            else if (d.includes('federal') || d.includes('state tax') || d.includes('fica') || d.includes('medicare')) cat = 'Taxes';
-          }
-          personalInserts.push({ description: t.description || 'Transaction', amount: Math.abs(parseFloat(t.amount) || 0), type, category_name: cat, date: t.date || fallbackDate, source: `document:${item.file.name}`, source_doc_id: docId });
-        });
+      const inserts = buildPersonalInserts(parsed, item.file.name, docId);
+      if (inserts.length > 0) {
+        const { error } = await supabase.from('personal_transactions').insert(inserts);
+        if (error) console.error('Personal insert error:', error);
       }
-      if (personalInserts.length > 0) await supabase.from('personal_transactions').insert(personalInserts);
     }
 
-    // ── BUSINESS ROUTING ──
     if (dest === 'business' || dest === 'both') {
-      const debits = (parsed.transactions || []).filter((t: any) => t.type === 'debit' && Math.abs(parseFloat(t.amount) || 0) > 0);
-      const credits = (parsed.transactions || []).filter((t: any) => t.type === 'credit' && Math.abs(parseFloat(t.amount) || 0) > 0);
-      const fallbackDate = new Date().toISOString().split('T')[0];
-
-      if (debits.length > 0) {
-        await supabase.from('expenses').insert(debits.map((t: any) => {
-          const d = (t.description || '').toLowerCase();
-          let cat = 'Other';
-          if (d.includes('software') || d.includes('subscription') || d.includes('saas') || d.includes('hosting') || d.includes('domain')) cat = 'Software & Tools';
-          else if (d.includes('marketing') || d.includes('ad') || d.includes('facebook') || d.includes('google ads') || d.includes('meta')) cat = 'Marketing & Ads';
-          else if (d.includes('travel') || d.includes('flight') || d.includes('hotel') || d.includes('airbnb') || d.includes('uber')) cat = 'Travel';
-          else if (d.includes('meal') || d.includes('restaurant') || d.includes('food') || d.includes('dining')) cat = 'Meals & Entertainment';
-          else if (d.includes('equipment') || d.includes('hardware') || d.includes('device') || d.includes('laptop')) cat = 'Equipment';
-          else if (d.includes('consulting') || d.includes('legal') || d.includes('accountant') || d.includes('lawyer') || d.includes('attorney')) cat = 'Professional Services';
-          return {
-            division: 'Consulting',
-            category: cat,
-            amount: Math.abs(parseFloat(t.amount) || 0),
-            description: t.description || 'Document Import',
-            date: t.date || fallbackDate,
-            source: 'document_import',
-            doc_source: item.file.name,
-          };
-        }));
+      const expInserts = buildBusinessExpenseInserts(parsed, item.file.name);
+      if (expInserts.length > 0) {
+        const { error } = await supabase.from('expenses').insert(expInserts);
+        if (error) console.error('Business expense insert error:', error);
       }
-      // Only add credits to business revenue if explicitly routed to business
-      if (credits.length > 0 && dest === 'business') {
-        await supabase.from('revenue').insert(credits.map((t: any) => ({
-          product_name: t.description || 'Business Income',
-          amount: Math.abs(parseFloat(t.amount) || 0),
-          source: parsed.doc_type || 'Document Import',
-          date: t.date || fallbackDate,
-        })));
+      // Only post credits to business revenue when explicitly 'business' destination
+      if (dest === 'business') {
+        const revInserts = buildBusinessRevenueInserts(parsed);
+        if (revInserts.length > 0) {
+          const { error } = await supabase.from('revenue').insert(revInserts);
+          if (error) console.error('Revenue insert error:', error);
+        }
       }
     }
-    // dest === 'none' → only saved to budget_documents, no transaction routing
+    // dest === 'none' → budget_documents only, no transaction routing
   };
 
   const analyzeAll = async () => {
