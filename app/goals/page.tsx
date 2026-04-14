@@ -52,7 +52,7 @@ export default function Goals() {
       const res = await fetch('/api/ai', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514', max_tokens: 1000,
+          model: 'claude-sonnet-4-6', max_tokens: 1000,
           system: 'Return ONLY valid JSON: {"overall_health":"string","priority_order":["goal names"],"insights":["string"],"risks":["string"],"recommendations":["string"]}. No markdown.',
           messages: [{ role: 'user', content: `Analyze these financial goals: ${JSON.stringify(goals)}. Current date: ${new Date().toISOString().split('T')[0]}. Provide strategic insights and priority recommendations.` }]
         })

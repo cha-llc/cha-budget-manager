@@ -83,7 +83,7 @@ export default function TaxPlanning() {
       const res = await fetch('/api/ai', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514', max_tokens: 1000,
+          model: 'claude-sonnet-4-6', max_tokens: 1000,
           system: 'You are a tax planning AI for self-employed entrepreneurs. Return ONLY valid JSON: {"estimated_tax_owed":0,"effective_rate":0,"quarterly_payment":0,"missed_deductions":["string"],"strategies":["string"],"warnings":["string"],"savings_opportunities":["string"]}. Use US tax law. No markdown.',
           messages: [{ role: 'user', content: `Tax year ${taxYear}, filing: ${filingStatus}. Income: ${JSON.stringify(income)}. Deductions: ${JSON.stringify(deductions)}. Self-employed, C.H.A. LLC (consulting, media, digital tools, books). Optimize for FEIE if applicable.` }]
         })

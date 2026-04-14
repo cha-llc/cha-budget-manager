@@ -81,7 +81,7 @@ export default function Budgets() {
       const res = await fetch('/api/ai', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514', max_tokens: 1000,
+          model: 'claude-sonnet-4-6', max_tokens: 1000,
           system: 'You are a budget planning AI for a multi-division LLC. Return ONLY valid JSON: {"rationale":"string","division_budgets":[{"division":"string","suggested_budget":0,"current_budget":0,"reasoning":"string"}],"total_recommended":0,"reallocation_notes":["string"],"growth_investment":["string"]}. No markdown.',
           messages: [{ role: 'user', content: `Generate AI budget for C.H.A. LLC. Divisions: ${DIVISIONS.join(', ')}. Current budgets: ${JSON.stringify(bizBudgets)}. Spending: ${JSON.stringify(spendByDiv)}. Company in growth mode, just launched 5 products.` }]
         })
@@ -327,7 +327,7 @@ export default function Budgets() {
       const res = await fetch('/api/ai', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514', max_tokens: 1000,
+          model: 'claude-sonnet-4-6', max_tokens: 1000,
           system: 'You are a personal finance AI. Return ONLY valid JSON: {"summary":"string","category_budgets":[{"name":"string","type":"income|expense","suggested_amount":0,"icon":"emoji","reasoning":"string"}],"monthly_income_estimate":0,"monthly_expense_estimate":0,"savings_rate":"string","insights":["string"]}. Base it strictly on the actual document data provided. No markdown.',
           messages: [{ role: 'user', content: `Build a personal budget from these uploaded financial documents. Total income across all docs: $${totalIncome.toFixed(2)}. Total expenses: $${totalExpenses.toFixed(2)}. Transactions sample: ${JSON.stringify(allTxs.slice(0, 40))}. Documents: ${documents.length} total. Create realistic monthly budget categories based on the actual spending patterns visible in the data.` }]
         })

@@ -101,7 +101,7 @@ export default function Expenses() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-4-6',
           max_tokens: 1000,
           system: 'You are a financial analyst AI. Return ONLY valid JSON: {"spending_summary":"string","top_patterns":["string"],"anomalies":["string"],"optimization_tips":["string"],"predicted_next_month":{"total":0,"breakdown":{"category":"amount"}},"waste_identified":["string"]}. No markdown.',
           messages: [{ role: 'user', content: `Analyze C.H.A. LLC expenses: ${JSON.stringify(expenses.slice(0, 50))}. Identify patterns, anomalies, waste, and predict next month's spending. Be specific and actionable.` }]

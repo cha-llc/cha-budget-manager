@@ -1,7 +1,7 @@
 // BUILD_V5_SMART_ROUTING
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import Layout from '@/components/Layout';
 import { supabase } from '@/lib/supabase';
 
@@ -122,7 +122,7 @@ export default function Documents() {
   const updateItem = (id: string, updates: Partial<QueuedFile>) =>
     setQueue(prev => prev.map(q => q.id === id ? { ...q, ...updates } : q));
 
-  const addFilesFromArray = useCallback((files: File[], docType: string, destination: 'personal' | 'business' | 'both' | 'none') => {
+  const addFilesFromArray = (files: File[], docType: string, destination: 'personal' | 'business' | 'both' | 'none') => {
     const valid = files.filter(f =>
       f.type === 'application/pdf' || f.type === 'image/png' ||
       f.type === 'image/jpeg' || f.type === 'image/jpg' ||
@@ -135,14 +135,12 @@ export default function Documents() {
       docType,
       detectedType: '',
       destination,
-      status: docType === 'auto' ? 'pending' : 'ready',
+      status: 'pending',
     }));
     setQueue(prev => [...prev, ...items]);
-    // Auto-detect immediately for each file if docType is 'auto'
-    if (docType === 'auto') {
-      items.forEach(item => autoDetectFile(item));
-    }
-  }, []);
+    // Always run auto-detect — it updates type+destination from AI, and for manual type it confirms
+    items.forEach(item => autoDetectFile(item, docType, destination));
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.length) return;
@@ -162,8 +160,9 @@ export default function Documents() {
   };
 
   // STEP 1: Quick AI scan to identify doc type + suggest destination
-  const autoDetectFile = async (item: QueuedFile) => {
-    updateItem(item.id, { status: 'detecting' });
+  // manualDocType/manualDest = what user selected; AI overrides if auto, confirms if manual
+  const autoDetectFile = async (item: QueuedFile, manualDocType?: string, manualDest?: string) => {
+    setQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: 'detecting' } : q));
     try {
       const base64 = await new Promise<string>((res, rej) => {
         const reader = new FileReader();
@@ -178,7 +177,7 @@ export default function Documents() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-4-6',
           max_tokens: 300,
           system: AI_DETECT_SYSTEM,
           messages: [{
@@ -208,15 +207,19 @@ export default function Documents() {
       const mappedType = typeMap[detected.doc_type?.toLowerCase()] || 'bank_statement';
       const dest = (['personal','business','both','none'].includes(detected.destination) ? detected.destination : 'personal') as QueuedFile['destination'];
 
-      updateItem(item.id, {
-        docType: mappedType,
+      // If user manually selected a type (not 'auto'), respect it but still update destination
+      const finalType = (manualDocType && manualDocType !== 'auto') ? manualDocType : mappedType;
+      const finalDest = (manualDocType && manualDocType !== 'auto') ? (manualDest as QueuedFile['destination'] || dest) : dest;
+      setQueue(prev => prev.map(q => q.id === item.id ? {
+        ...q,
+        docType: finalType,
         detectedType: detected.doc_type || 'unknown',
-        destination: dest,
+        destination: finalDest,
         status: 'ready',
-      });
+      } : q));
     } catch {
-      // Detection failed — leave as pending so user can manually set
-      updateItem(item.id, { status: 'ready', detectedType: 'detection failed' });
+      // Detection failed — mark ready so user can still proceed
+      setQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: 'ready', detectedType: 'detection failed' } : q));
     }
   };
 
@@ -249,7 +252,7 @@ export default function Documents() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-4-6',
           max_tokens: 2000,
           system: AI_ANALYZE_SYSTEM,
           messages: [{

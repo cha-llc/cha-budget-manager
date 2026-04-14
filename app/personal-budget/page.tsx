@@ -116,7 +116,7 @@ export default function PersonalBudget() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-4-6',
           max_tokens: 1000,
           system: 'You are a personal finance advisor. Give direct, actionable advice in 3-4 sentences. Be specific. No fluff.',
           messages: [{ role: 'user', content: `Personal budget snapshot: Income $${totalIncome.toFixed(0)}, Expenses $${totalExpenses.toFixed(0)}, Net $${(totalIncome - totalExpenses).toFixed(0)}. Category breakdown: ${JSON.stringify(catSpend)}. Budgeted categories: ${JSON.stringify(categories.filter(c => c.budgeted_amount > 0).map(c => ({ name: c.name, budget: c.budgeted_amount })))}. Give specific personal finance advice for this person's situation.` }]

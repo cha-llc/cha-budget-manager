@@ -53,7 +53,7 @@ export default function Investments() {
       const res = await fetch('/api/ai', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514', max_tokens: 1000,
+          model: 'claude-sonnet-4-6', max_tokens: 1000,
           system: 'Return ONLY valid JSON: {"portfolio_health":"string","diversification_score":0,"insights":["string"],"risks":["string"],"suggestions":["string"],"rebalancing":["string"]}. No markdown.',
           messages: [{ role: 'user', content: `Analyze portfolio: ${JSON.stringify(investments.map(i => ({ ...i, value: parseFloat(i.shares) * parseFloat(i.current_price), gl: (parseFloat(i.current_price) - parseFloat(i.purchase_price)) * parseFloat(i.shares) })))}. Total value: $${totalValue.toFixed(0)}.` }]
         })

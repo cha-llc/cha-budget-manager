@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import getConfig from 'next/config';
 
+// Raise body size limit to 20MB to handle large PDF/image base64 payloads
+export const config = {
+  api: { bodyParser: { sizeLimit: '20mb' } },
+};
+
+export const maxDuration = 60;
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -21,7 +28,7 @@ export async function POST(req: NextRequest) {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: body.model || 'claude-sonnet-4-20250514',
+        model: body.model || 'claude-sonnet-4-6',
         max_tokens: body.max_tokens || 2000,
         system: body.system,
         messages: body.messages,

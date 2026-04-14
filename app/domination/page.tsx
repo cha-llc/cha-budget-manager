@@ -114,7 +114,7 @@ export default function Domination() {
       const res = await fetch('/api/ai', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514', max_tokens: 1000,
+          model: 'claude-sonnet-4-6', max_tokens: 1000,
           system: 'You are a direct strategic advisor. Give sharp, tactical advice in 3 paragraphs. Speak directly to CJ. No bullet points. No fluff.',
           messages: [{ role: 'user', content: `CJ H. Adisa. April 2026. 96-Month Global Domination Plan. Current monthly revenue: $${currentRevenue}. Checklist progress: ${completed}/${total} items complete. Milestones achieved: ${completedMilestones}/${milestones.length}. 5 products live. Colombia relocation Aug 23. Triple citizenship target: Colombia, Ghana, Nigeria. What are the 3 most important things to execute RIGHT NOW this week for maximum momentum toward $100K net income by Month 12?` }]
         })

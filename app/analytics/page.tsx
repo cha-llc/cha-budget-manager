@@ -71,7 +71,7 @@ export default function Analytics() {
       const res = await fetch('/api/ai', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514', max_tokens: 1000,
+          model: 'claude-sonnet-4-6', max_tokens: 1000,
           system: 'You are a CFO-level analyst. Return ONLY valid JSON: {"executive_summary":"string","period_highlights":["string"],"spending_patterns":["string"],"growth_trends":["string"],"action_items":["string"],"forecast_next_month":{"expected_income":0,"expected_expenses":0,"net":0,"confidence":"string"}}. No markdown.',
           messages: [{ role: 'user', content: `${period} financial report for C.H.A. LLC. Total Revenue: $${totalRevenue.toFixed(0)}, Total Expenses: $${totalExpenses.toFixed(0)}, Net: $${netProfit.toFixed(0)}. Monthly data: ${JSON.stringify(monthly)}. Revenue by product: ${JSON.stringify(topProducts.slice(0, 5))}. Expenses by category: ${JSON.stringify(topCategories.slice(0, 5))}. 5 products launched April 2026. Provide CFO-level analysis.` }]
         })

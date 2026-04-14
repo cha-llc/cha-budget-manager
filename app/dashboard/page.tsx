@@ -81,7 +81,7 @@ export default function Dashboard() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-4-6',
           max_tokens: 1000,
           system: 'You are a financial advisor AI. Give a direct, strategic 2-3 sentence insight. No fluff.',
           messages: [{ role: 'user', content: `C.H.A. LLC financial snapshot: Budget $${totalBudget}/mo, Spent $${totalSpent}, Revenue $${totalRevenue}, Net $${netCashFlow}. 5 products just launched April 10-11, 2026 with $0 revenue. Promos start April 14. Give a sharp, actionable insight for right now.` }]
