@@ -1,146 +1,173 @@
 'use client';
-
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 interface LayoutProps {
   children: React.ReactNode;
   activeTab?: string;
 }
 
-const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: '📊', key: 'dashboard' },
-  { href: '/documents', label: 'Documents', icon: '🗂️', key: 'documents' },
-  { href: '/expenses', label: 'Expenses', icon: '📝', key: 'expenses' },
-  { href: '/revenue', label: 'Revenue', icon: '💹', key: 'revenue' },
-  { href: '/budgets', label: 'Budgets', icon: '💰', key: 'budgets' },
-  { href: '/goals', label: 'Goals', icon: '🎯', key: 'goals' },
-  { href: '/investments', label: 'Investments', icon: '📈', key: 'investments' },
-  { href: '/tax', label: 'Tax Planning', icon: '🧾', key: 'tax' },
-  { href: '/networth', label: 'Net Worth', icon: '🏦', key: 'networth' },
-  { href: '/analytics', label: 'Analytics', icon: '🔬', key: 'analytics' },
-  { href: '/reports', label: 'Reports', icon: '📄', key: 'reports' },
-  { href: '/domination', label: 'Domination Plan', icon: '👑', key: 'domination' },
+const NAV = [
+  { href:'/dashboard', label:'Dashboard', icon:'⌂', key:'dashboard' },
+  { href:'/documents', label:'Documents', icon:'⬆', key:'documents' },
+  { href:'/expenses', label:'Expenses', icon:'↙', key:'expenses' },
+  { href:'/revenue', label:'Revenue', icon:'↗', key:'revenue' },
+  { href:'/budgets', label:'Budgets', icon:'◎', key:'budgets' },
+  { href:'/goals', label:'Goals', icon:'◈', key:'goals' },
+  { href:'/investments', label:'Investments', icon:'▲', key:'investments' },
+  { href:'/tax', label:'Tax', icon:'⬡', key:'tax' },
+  { href:'/networth', label:'Net Worth', icon:'◆', key:'networth' },
+  { href:'/analytics', label:'Analytics', icon:'∿', key:'analytics' },
+  { href:'/reports', label:'Reports', icon:'≡', key:'reports' },
+  { href:'/domination', label:'Domination', icon:'✦', key:'domination' },
 ];
 
 export default function Layout({ children, activeTab = 'dashboard' }: LayoutProps) {
+  const [time, setTime] = useState('');
+
+  useEffect(() => {
+    const tick = () => setTime(new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
+    tick();
+    const id = setInterval(tick, 60000);
+    return () => clearInterval(id);
+  }, []);
+
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#0d0d1a', fontFamily: "'Poppins', sans-serif" }}>
+    <div style={{ minHeight:'100vh', background:'#080810', fontFamily:"'Poppins',sans-serif", color:'#fff' }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Lora:wght@400;600;700&family=Poppins:wght@300;400;500;600;700&display=swap');
-        * { box-sizing: border-box; }
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: #1A1A2E; }
-        ::-webkit-scrollbar-thumb { background: #C9A84C; border-radius: 3px; }
-        .nav-link { transition: all 0.2s ease; white-space: nowrap; }
-        .nav-link:hover { background: rgba(201,168,76,0.1) !important; }
-        .card-hover { transition: transform 0.2s ease, box-shadow 0.2s ease; }
-        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.3) !important; }
-        .btn-primary { transition: all 0.2s ease; cursor: pointer; }
-        .btn-primary:hover { opacity: 0.88; transform: translateY(-1px); }
-        .ai-badge { 
-          background: linear-gradient(135deg, #9B5DE5, #2A9D8F);
-          color: white; font-size: 10px; padding: 2px 8px; border-radius: 20px;
-          font-weight: 600; letter-spacing: 0.5px;
-        }
+        @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400&family=Poppins:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+        *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+
+        /* ── Scrollbar ── */
+        ::-webkit-scrollbar { width:5px; height:5px; }
+        ::-webkit-scrollbar-track { background:transparent; }
+        ::-webkit-scrollbar-thumb { background:rgba(201,168,76,0.3); border-radius:10px; }
+        ::-webkit-scrollbar-thumb:hover { background:rgba(201,168,76,0.6); }
+
+        /* ── Base inputs ── */
         input, select, textarea {
-          background: #1A1A2E !important;
-          color: #fff !important;
-          border: 1px solid rgba(201,168,76,0.3) !important;
-          border-radius: 6px !important;
-          padding: 10px 14px !important;
-          font-family: 'Poppins', sans-serif !important;
-          font-size: 14px !important;
-          width: 100% !important;
+          background:rgba(255,255,255,0.05) !important;
+          color:#fff !important;
+          border:1px solid rgba(255,255,255,0.1) !important;
+          border-radius:10px !important;
+          padding:10px 14px !important;
+          font-family:'Poppins',sans-serif !important;
+          font-size:13px !important;
+          width:100% !important;
+          outline:none !important;
+          transition:border-color 0.2s !important;
         }
         input:focus, select:focus, textarea:focus {
-          outline: none !important;
-          border-color: #C9A84C !important;
+          border-color:rgba(201,168,76,0.6) !important;
+          background:rgba(201,168,76,0.05) !important;
         }
-        label { color: rgba(255,255,255,0.7); font-size: 12px; font-weight: 500; margin-bottom: 6px; display: block; }
+        input::placeholder { color:rgba(255,255,255,0.25) !important; }
+        select option { background:#12121f; color:#fff; }
+        label { display:block; font-size:11px; color:rgba(255,255,255,0.4); text-transform:uppercase; letter-spacing:0.7px; margin-bottom:5px; font-weight:600; }
+
+        /* ── Nav ── */
+        .nav-item { position:relative; transition:all 0.2s; }
+        .nav-item:hover > span { color:#fff !important; }
+        .nav-item.active > span { color:#C9A84C !important; }
+        .nav-item.active::after { content:''; position:absolute; bottom:0; left:0; right:0; height:2px; background:linear-gradient(90deg,#C9A84C,#9B5DE5); border-radius:2px 2px 0 0; }
+
+        /* ── Cards ── */
+        .glass { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:16px; }
+        .glass-gold { background:rgba(201,168,76,0.04); border:1px solid rgba(201,168,76,0.2); border-radius:16px; }
+        .glass-hover { transition:all 0.2s; cursor:pointer; }
+        .glass-hover:hover { background:rgba(255,255,255,0.055) !important; border-color:rgba(255,255,255,0.13) !important; transform:translateY(-1px); }
+
+        /* ── Buttons ── */
+        .btn { transition:all 0.18s; cursor:pointer; font-family:'Poppins',sans-serif; font-weight:600; border:none; outline:none; }
+        .btn:hover { opacity:0.88; transform:translateY(-1px); }
+        .btn:active { transform:translateY(0); }
+        .btn-gold { background:linear-gradient(135deg,#C9A84C,#e0b85c); color:#0d0d20; }
+        .btn-purple { background:linear-gradient(135deg,#9B5DE5,#7c3fd4); color:#fff; }
+        .btn-teal { background:linear-gradient(135deg,#2A9D8F,#1d7a6e); color:#fff; }
+        .btn-ghost { background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.7); border:1px solid rgba(255,255,255,0.1) !important; }
+
+        /* ── Progress bars ── */
+        .progress-track { background:rgba(255,255,255,0.07); border-radius:100px; overflow:hidden; }
+        .progress-fill { border-radius:100px; transition:width 0.8s cubic-bezier(0.4,0,0.2,1); }
+
+        /* ── Chips / badges ── */
+        .chip { display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
+        .chip-income { background:rgba(42,157,143,0.15); color:#2A9D8F; }
+        .chip-expense { background:rgba(193,18,31,0.15); color:#ef4444; }
+        .chip-gold { background:rgba(201,168,76,0.15); color:#C9A84C; }
+        .chip-purple { background:rgba(155,93,229,0.15); color:#9B5DE5; }
+
+        /* ── Animations ── */
+        @keyframes fadeUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+        @keyframes shimmer { 0% { background-position:-200% 0; } 100% { background-position:200% 0; } }
+        .fade-up { animation:fadeUp 0.4s ease both; }
+        .fade-up-1 { animation-delay:0.05s; }
+        .fade-up-2 { animation-delay:0.1s; }
+        .fade-up-3 { animation-delay:0.15s; }
+        .fade-up-4 { animation-delay:0.2s; }
+        .pulse { animation:pulse 2s infinite; }
+
+        /* ── Mono numbers ── */
+        .mono { font-family:'JetBrains Mono',monospace; }
+
+        /* ── Table ── */
+        .tbl-row { border-bottom:1px solid rgba(255,255,255,0.04); transition:background 0.15s; }
+        .tbl-row:hover { background:rgba(255,255,255,0.03); }
+        .tbl-row:last-child { border-bottom:none; }
+
+        /* ── Responsive ── */
+        @media(max-width:900px) {
+          .hide-sm { display:none !important; }
+          main { padding:1rem !important; }
+        }
       `}</style>
 
-      {/* Header */}
-      <header style={{
-        backgroundColor: '#1A1A2E',
-        borderBottom: '2px solid #C9A84C',
-        padding: '0 2rem',
-        position: 'sticky',
-        top: 0,
-        zIndex: 100,
-        boxShadow: '0 4px 20px rgba(0,0,0,0.4)'
-      }}>
-        <div style={{ maxWidth: '1600px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '64px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{
-              width: '36px', height: '36px', borderRadius: '8px',
-              background: 'linear-gradient(135deg, #C9A84C, #9B5DE5)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '18px', fontWeight: 'bold', color: '#fff', fontFamily: "'Lora', serif"
-            }}>C</div>
+      {/* ── HEADER ── */}
+      <header style={{ background:'rgba(8,8,16,0.95)', backdropFilter:'blur(20px)', borderBottom:'1px solid rgba(201,168,76,0.15)', padding:'0 2rem', position:'sticky', top:0, zIndex:200 }}>
+        <div style={{ maxWidth:'1600px', margin:'0 auto', display:'flex', justifyContent:'space-between', alignItems:'center', height:'60px' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:'12px' }}>
+            <div style={{ width:'34px', height:'34px', borderRadius:'10px', background:'linear-gradient(135deg,#C9A84C,#9B5DE5)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'16px', fontWeight:'800', color:'#fff', fontFamily:"'Lora',serif", flexShrink:0 }}>C</div>
             <div>
-              <h1 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#fff', fontFamily: "'Lora', serif", letterSpacing: '0.5px' }}>
-                C.H.A. LLC Budget Manager
-              </h1>
-              <p style={{ margin: 0, fontSize: '10px', color: '#C9A84C', letterSpacing: '1px', textTransform: 'uppercase' }}>
-                Sip slow. Love loud. Live free.
-              </p>
+              <h1 style={{ margin:0, fontSize:'14px', fontWeight:'700', color:'#fff', fontFamily:"'Lora',serif", letterSpacing:'0.3px', lineHeight:1.2 }}>C.H.A. LLC Budget Manager</h1>
+              <p style={{ margin:0, fontSize:'9px', color:'rgba(201,168,76,0.6)', letterSpacing:'2px', textTransform:'uppercase' }}>Sip slow. Love loud. Live free.</p>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span className="ai-badge">AI-Powered</span>
-            <div style={{ fontSize: '12px', color: '#C9A84C', fontWeight: '600' }}>
-              {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+          <div style={{ display:'flex', alignItems:'center', gap:'16px' }}>
+            <span style={{ background:'linear-gradient(135deg,#9B5DE5,#2A9D8F)', color:'#fff', fontSize:'9px', padding:'3px 10px', borderRadius:'20px', fontWeight:'700', letterSpacing:'0.8px', textTransform:'uppercase' }}>AI-Powered</span>
+            <div style={{ textAlign:'right' }}>
+              <p style={{ margin:0, fontSize:'12px', color:'rgba(255,255,255,0.6)', fontWeight:'500' }}>
+                {new Date().toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric' })}
+              </p>
+              <p style={{ margin:0, fontSize:'10px', color:'rgba(201,168,76,0.5)', fontFamily:"'JetBrains Mono',monospace" }}>{time}</p>
             </div>
           </div>
         </div>
       </header>
 
-      {/* Navigation */}
-      <nav style={{
-        backgroundColor: '#12122a',
-        borderBottom: '1px solid rgba(201,168,76,0.3)',
-        overflowX: 'auto',
-        position: 'sticky',
-        top: '64px',
-        zIndex: 99
-      }}>
-        <div style={{ maxWidth: '1600px', margin: '0 auto', display: 'flex', padding: '0 1rem' }}>
-          {navItems.map(item => (
-            <Link key={item.key} href={item.href} className="nav-link" style={{
-              padding: '0.85rem 1rem',
-              color: activeTab === item.key ? '#C9A84C' : 'rgba(255,255,255,0.55)',
-              textDecoration: 'none',
-              borderBottom: activeTab === item.key ? '2px solid #C9A84C' : '2px solid transparent',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              fontSize: '12.5px',
-              fontWeight: activeTab === item.key ? '600' : '400',
-            }}>
-              <span style={{ fontSize: '14px' }}>{item.icon}</span>
-              {item.label}
+      {/* ── NAV ── */}
+      <nav style={{ background:'rgba(10,10,22,0.98)', backdropFilter:'blur(20px)', borderBottom:'1px solid rgba(255,255,255,0.06)', position:'sticky', top:'60px', zIndex:199, overflowX:'auto' }}>
+        <div style={{ maxWidth:'1600px', margin:'0 auto', display:'flex', padding:'0 2rem' }}>
+          {NAV.map(item => (
+            <Link key={item.key} href={item.href}
+              className={`nav-item ${activeTab===item.key?'active':''}`}
+              style={{ padding:'14px 14px 13px', display:'flex', alignItems:'center', gap:'5px', textDecoration:'none', whiteSpace:'nowrap' }}>
+              <span style={{ fontSize:'11px', opacity:0.6 }}>{item.icon}</span>
+              <span style={{ fontSize:'12px', fontWeight:activeTab===item.key?'600':'400', color:activeTab===item.key?'#C9A84C':'rgba(255,255,255,0.45)', transition:'color 0.2s' }}>{item.label}</span>
             </Link>
           ))}
         </div>
       </nav>
 
-      {/* Main Content */}
-      <main style={{ maxWidth: '1600px', margin: '0 auto', padding: '2rem', minHeight: 'calc(100vh - 170px)' }}>
+      {/* ── MAIN ── */}
+      <main style={{ maxWidth:'1600px', margin:'0 auto', padding:'2rem', minHeight:'calc(100vh - 130px)' }}>
         {children}
       </main>
 
-      {/* Footer */}
-      <footer style={{
-        backgroundColor: '#1A1A2E',
-        color: 'rgba(255,255,255,0.35)',
-        padding: '1.5rem 2rem',
-        textAlign: 'center',
-        fontSize: '11px',
-        borderTop: '1px solid rgba(201,168,76,0.2)',
-      }}>
-        <p style={{ margin: 0 }}>C.H.A. LLC © 2026 | Consulting • Tea Time Network • Digital Tools • Books</p>
-        <p style={{ margin: '5px 0 0 0', color: 'rgba(201,168,76,0.5)' }}>AI-Powered Financial Intelligence • Supabase • Stripe • HubSpot</p>
+      {/* ── FOOTER ── */}
+      <footer style={{ borderTop:'1px solid rgba(255,255,255,0.05)', padding:'1.25rem 2rem', textAlign:'center' }}>
+        <p style={{ margin:0, fontSize:'11px', color:'rgba(255,255,255,0.2)' }}>C.H.A. LLC © 2026 · Consulting · Tea Time Network · Digital Tools · Books</p>
       </footer>
     </div>
   );
