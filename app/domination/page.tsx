@@ -183,7 +183,7 @@ export default function Domination() {
         {activeTab === 'Overview' && (
           <div>
             {/* AI Advisor */}
-            <div style={{ marginBottom: '1.5rem', borderColor: 'rgba(201,168,76,0.4)', background: 'rgba(201,168,76,0.04)' }}>
+            <div className="glass" style={{ padding:'1.5rem', marginBottom: '1.5rem', borderColor: 'rgba(201,168,76,0.4)', background: 'rgba(201,168,76,0.04)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: blueprint ? '1rem' : 0, flexWrap: 'wrap', gap: '0.75rem' }}>
                 <h3 style={{ margin: 0, color: '#C9A84C', fontSize: '15px', fontWeight: '600' }}>⚡ AI Strategic Advisor</h3>
                 <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>

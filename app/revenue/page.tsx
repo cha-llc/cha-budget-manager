@@ -65,17 +65,18 @@ export default function Revenue() {
 
         {/* KPIs */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
-          <div className="glass-hover" style={{ borderLeft: '3px solid #2A9D8F' }}>
+          <div className="glass glass-hover" style={{ padding:'1.25rem', borderLeft: '3px solid #2A9D8F' }}>
             <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Revenue</p>
-            <p style={{ margin: '6px 0 0 0', fontSize: '32px', fontWeight: '700', color: '#2A9D8F', fontFamily: "'Lora', serif" }}>${total.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+            <p className="mono" style={{ margin: '6px 0 0 0', fontSize: '28px', fontWeight: '700', color: '#2A9D8F', lineHeight:1 }}>${total.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
           </div>
-          <div className="glass-hover" style={{ borderLeft: '3px solid #C9A84C' }}>
+          <div className="glass glass-hover" style={{ padding:'1.25rem', borderLeft: '3px solid #C9A84C' }}>
             <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Transactions</p>
-            <p style={{ margin: '6px 0 0 0', fontSize: '32px', fontWeight: '700', color: '#C9A84C', fontFamily: "'Lora', serif" }}>{revenue.length}</p>
+            <p className="mono" style={{ margin: '6px 0 0 0', fontSize: '28px', fontWeight: '700', color: '#C9A84C', lineHeight:1 }}>{revenue.length}</p>
           </div>
-          <div className="glass-hover" style={{ borderLeft: '3px solid #9B5DE5' }}>
+          <div className="glass glass-hover" style={{ padding:'1.25rem', borderLeft: '3px solid #9B5DE5' }}>
             <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Top Product</p>
-            <p style={{ margin: '6px 0 0 0', fontSize: '18px', fontWeight: '700', color: '#9B5DE5' }}>{topProducts[0]?.[0] || '—'}</p>
+            <p style={{ margin: '6px 0 0 0', fontSize: '16px', fontWeight: '700', color: '#9B5DE5' }}>{topProducts[0]?.[0] || '—'}</p>
+            <p className="mono" style={{ margin: '3px 0 0 0', fontSize: '13px', color: '#2A9D8F' }}>{topProducts[0] ? '$' + topProducts[0][1].toLocaleString(undefined,{maximumFractionDigits:0}) : ''}</p>
           </div>
         </div>
 
@@ -97,7 +98,7 @@ export default function Revenue() {
 
         {/* Add Form */}
         {showForm && (
-          <div style={{ marginBottom: '1.5rem', borderColor: 'rgba(42,157,143,0.5)' }}>
+          <div className="glass" style={{ padding:'1.5rem', marginBottom: '1.5rem', borderColor: 'rgba(42,157,143,0.3)' }}>
             <h3 style={{ margin: '0 0 1.25rem 0', color: '#2A9D8F', fontSize: '15px', fontWeight: '600' }}>Record Revenue</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
               <div><label>Product / Service</label><select value={form.product_name} onChange={e => setForm({ ...form, product_name: e.target.value })}>{PRODUCTS.map(p => <option key={p}>{p}</option>)}</select></div>
