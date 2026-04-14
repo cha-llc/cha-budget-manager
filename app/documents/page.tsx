@@ -110,8 +110,30 @@ export default function Documents() {
   const [history, setHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [activeView, setActiveView] = useState<'upload' | 'history'>('upload');
+  const [clearConfirm, setClearConfirm] = useState<'idle' | 'confirm' | 'clearing'>('idle');
+  const [clearMsg, setClearMsg] = useState('');
 
   useEffect(() => { fetchHistory(); }, []);
+
+  const clearAllDocuments = async () => {
+    setClearConfirm('clearing');
+    try {
+      // Delete all personal transactions from document imports
+      await supabase.from('personal_transactions').delete().like('source', 'document:%');
+      // Delete all budget documents
+      await supabase.from('budget_documents').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      // Reset personal budget categories to $0
+      await supabase.from('personal_budget_categories').update({ budgeted_amount: 0 }).neq('id', '00000000-0000-0000-0000-000000000000');
+      setHistory([]);
+      setQueue([]);
+      setClearMsg('✅ All documents and imported transactions cleared. Upload fresh documents to start over.');
+      setClearConfirm('idle');
+      setTimeout(() => setClearMsg(''), 8000);
+    } catch (e: any) {
+      setClearMsg('❌ Clear failed: ' + (e?.message || 'unknown error'));
+      setClearConfirm('idle');
+    }
+  };
 
   const fetchHistory = async () => {
     setLoadingHistory(true);
@@ -610,6 +632,34 @@ export default function Documents() {
         {/* HISTORY VIEW */}
         {activeView === 'history' && (
           <div>
+            {/* Clear All controls */}
+            {history.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                {clearMsg && <span style={{ fontSize: '12px', color: clearMsg.startsWith('✅') ? '#2A9D8F' : '#C1121F' }}>{clearMsg}</span>}
+                {clearConfirm === 'idle' && (
+                  <button onClick={() => setClearConfirm('confirm')}
+                    style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid rgba(193,18,31,0.5)', background: 'transparent', color: '#C1121F', fontWeight: '600', fontSize: '12px', cursor: 'pointer', fontFamily: 'Poppins,sans-serif' }}>
+                    🗑️ Clear All Documents & Start Fresh
+                  </button>
+                )}
+                {clearConfirm === 'confirm' && (
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <span style={{ fontSize: '12px', color: '#f4a261' }}>⚠️ Deletes all {history.length} documents + all imported transactions. Cannot undo.</span>
+                    <button onClick={clearAllDocuments}
+                      style={{ padding: '7px 16px', borderRadius: '8px', border: 'none', background: '#C1121F', color: '#fff', fontWeight: '700', fontSize: '12px', cursor: 'pointer', fontFamily: 'Poppins,sans-serif' }}>
+                      Yes, Clear Everything
+                    </button>
+                    <button onClick={() => setClearConfirm('idle')}
+                      style={{ padding: '7px 14px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.15)', background: 'transparent', color: 'rgba(255,255,255,0.5)', fontSize: '12px', cursor: 'pointer', fontFamily: 'Poppins,sans-serif' }}>
+                      Cancel
+                    </button>
+                  </div>
+                )}
+                {clearConfirm === 'clearing' && (
+                  <span style={{ fontSize: '12px', color: '#C9A84C' }}>⏳ Clearing all data...</span>
+                )}
+              </div>
+            )}
             {loadingHistory ? (
               <div style={{ ...card, textAlign: 'center', padding: '3rem' }}><p style={{ color: 'rgba(255,255,255,0.4)', margin: 0 }}>Loading history...</p></div>
             ) : history.length === 0 ? (

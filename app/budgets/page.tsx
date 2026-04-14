@@ -41,6 +41,8 @@ export default function Budgets() {
   const [importing, setImporting] = useState<string | null>(null);
   const [importMsg, setImportMsg] = useState('');
   const [buildingFromDocs, setBuildingFromDocs] = useState(false);
+  const [clearConfirm, setClearConfirm] = useState<'idle' | 'confirm' | 'clearing'>('idle');
+  const [clearMsg, setClearMsg] = useState('');
   const [buildMsg, setBuildMsg] = useState('');
   const [exportMsg, setExportMsg] = useState('');
 
@@ -164,7 +166,11 @@ export default function Budgets() {
       if (error) throw error;
       if (data) {
         setPersTxs(prev => [...data, ...prev]);
-        await supabase.from('budget_documents').update({ budget_type: 'both' }).eq('id', doc.id);
+        await supabase.from('budget_documents').update({
+          budget_type: 'both',
+          imported_to_budget: true,
+          imported_at: new Date().toISOString(),
+        }).eq('id', doc.id);
         const incomeCount = inserts.filter(i => i.type === 'income').length;
         const expenseCount = inserts.filter(i => i.type === 'expense').length;
         setImportMsg(`✅ Imported from "${doc.file_name}": ${incomeCount} income item${incomeCount !== 1 ? 's' : ''}, ${expenseCount} expense item${expenseCount !== 1 ? 's' : ''} — categorized automatically`);
@@ -241,6 +247,31 @@ export default function Budgets() {
     } catch (e: any) {
       setBuildMsg('Could not build budget. Make sure you have uploaded documents first.');
     } finally { setBuildingFromDocs(false); }
+  };
+
+  // Clear all documents + personal transactions — fresh start
+  const clearAllData = async () => {
+    setClearConfirm('clearing');
+    try {
+      // Delete all personal transactions from document imports
+      await supabase.from('personal_transactions')
+        .delete()
+        .like('source', 'document:%');
+      // Delete all budget documents
+      await supabase.from('budget_documents').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      // Reset personal budget categories budgeted amounts to 0
+      await supabase.from('personal_budget_categories')
+        .update({ budgeted_amount: 0 })
+        .neq('id', '00000000-0000-0000-0000-000000000000');
+      // Reload everything
+      await loadAll();
+      setClearMsg('✅ All documents and imported transactions cleared. Ready for fresh data.');
+      setClearConfirm('idle');
+      setTimeout(() => setClearMsg(''), 8000);
+    } catch (e: any) {
+      setClearMsg('❌ Clear failed: ' + (e?.message || 'unknown error'));
+      setClearConfirm('idle');
+    }
   };
 
   // ── COMPUTED ──
@@ -436,43 +467,68 @@ export default function Budgets() {
               )}
             </div>
 
-            {/* Import individual document */}
+            {/* Import individual document + Clear All */}
             {documents.length > 0 && (
               <div style={{ ...card, marginBottom: '1.5rem' }}>
-                <h3 style={{ margin: '0 0 1rem 0', color: '#fff', fontSize: '15px', fontWeight: '600' }}>📥 Import Transactions from a Specific Document</h3>
+                {/* Section header with Clear All button */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                  <h3 style={{ margin: 0, color: '#fff', fontSize: '15px', fontWeight: '600' }}>📥 Import Transactions from a Specific Document</h3>
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    {clearConfirm === 'idle' && (
+                      <button onClick={() => setClearConfirm('confirm')}
+                        style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid rgba(193,18,31,0.4)', background: 'transparent', color: '#C1121F', fontWeight: '600', fontSize: '12px', cursor: 'pointer', fontFamily: 'Poppins,sans-serif' }}>
+                        🗑️ Clear All & Start Fresh
+                      </button>
+                    )}
+                    {clearConfirm === 'confirm' && (
+                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                        <span style={{ fontSize: '12px', color: '#f4a261' }}>⚠️ This deletes all docs + imported transactions. Sure?</span>
+                        <button onClick={clearAllData}
+                          style={{ padding: '6px 14px', borderRadius: '8px', border: 'none', background: '#C1121F', color: '#fff', fontWeight: '700', fontSize: '12px', cursor: 'pointer', fontFamily: 'Poppins,sans-serif' }}>
+                          Yes, Clear Everything
+                        </button>
+                        <button onClick={() => setClearConfirm('idle')}
+                          style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.15)', background: 'transparent', color: 'rgba(255,255,255,0.5)', fontSize: '12px', cursor: 'pointer', fontFamily: 'Poppins,sans-serif' }}>
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                    {clearConfirm === 'clearing' && (
+                      <span style={{ fontSize: '12px', color: '#C9A84C' }}>⏳ Clearing...</span>
+                    )}
+                  </div>
+                </div>
+                {clearMsg && <div style={{ padding: '10px 14px', background: clearMsg.startsWith('✅') ? 'rgba(42,157,143,0.1)' : 'rgba(193,18,31,0.1)', border: `1px solid ${clearMsg.startsWith('✅') ? 'rgba(42,157,143,0.3)' : 'rgba(193,18,31,0.3)'}`, borderRadius: '8px', color: clearMsg.startsWith('✅') ? '#2A9D8F' : '#C1121F', fontSize: '13px', marginBottom: '1rem' }}>{clearMsg}</div>}
                 {importMsg && <div style={{ padding: '10px 14px', background: 'rgba(42,157,143,0.1)', border: '1px solid rgba(42,157,143,0.3)', borderRadius: '8px', color: '#2A9D8F', fontSize: '13px', marginBottom: '1rem' }}>{importMsg}</div>}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
                   {documents.map(doc => {
                     const txCount = (doc.transactions || []).length;
-                    const imported = doc.budget_type === 'both' || doc.budget_type === 'personal';
+                    const imported = doc.imported_to_budget === true;
+                    // Income display: use net pay for pay stubs
+                    const dt = (doc.doc_type || '').toLowerCase();
+                    const isPayStub = dt.includes('pay') || dt.includes('stub') || dt.includes('paycheck');
+                    const incomeDisplay = isPayStub
+                      ? (() => { const kf = doc.key_figures || []; const nf = kf.find((k: any) => k.label?.toLowerCase().includes('net pay')); return parseFloat(nf?.value?.replace(/[$,]/g,'') || doc.net_cashflow || doc.total_income || '0'); })()
+                      : parseFloat(doc.total_income || 0);
                     return (
-                      <div key={doc.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: '1rem', alignItems: 'center', padding: '0.85rem 1rem', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <div key={doc.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: '1rem', alignItems: 'center', padding: '0.85rem 1rem', background: imported ? 'rgba(42,157,143,0.04)' : 'rgba(255,255,255,0.03)', borderRadius: '8px', border: `1px solid ${imported ? 'rgba(42,157,143,0.2)' : 'rgba(255,255,255,0.06)'}` }}>
                         <div>
                           <p style={{ margin: 0, color: '#fff', fontWeight: '500', fontSize: '13px' }}>{doc.file_name}</p>
-                          <p style={{ margin: 0, color: 'rgba(255,255,255,0.35)', fontSize: '11px' }}>{doc.doc_type}{doc.period ? ` • ${doc.period}` : ''} • {txCount} transactions</p>
+                          <p style={{ margin: 0, color: 'rgba(255,255,255,0.35)', fontSize: '11px' }}>
+                            {doc.doc_type}{doc.period ? ` • ${doc.period}` : ''} • {txCount} transaction{txCount !== 1 ? 's' : ''}
+                            {imported && doc.imported_at && <span style={{ color: 'rgba(42,157,143,0.6)', marginLeft: '6px' }}>• imported {new Date(doc.imported_at).toLocaleDateString()}</span>}
+                          </p>
                         </div>
-                        <span style={{ fontSize: '13px', color: '#2A9D8F', fontWeight: '600', whiteSpace: 'nowrap' }}>
-                          {/* Show net pay for pay stubs, total income for other docs */}
-                          +${(() => {
-                            const dt = (doc.doc_type || '').toLowerCase();
-                            if (dt.includes('pay') || dt.includes('stub') || dt.includes('paycheck')) {
-                              const kf = doc.key_figures || [];
-                              const netFig = kf.find((k: any) => k.label?.toLowerCase().includes('net pay'));
-                              if (netFig) return parseFloat(netFig.value?.replace(/[$,]/g, '') || '0').toLocaleString();
-                              return parseFloat(doc.net_cashflow || doc.total_income || '0').toLocaleString();
-                            }
-                            return parseFloat(doc.total_income || 0).toLocaleString();
-                          })()}
-                        </span>
-                        <span style={{ fontSize: '13px', color: '#C1121F', fontWeight: '600', whiteSpace: 'nowrap' }}>-${parseFloat(doc.total_expenses || 0).toLocaleString()}</span>
+                        <span style={{ fontSize: '13px', color: '#2A9D8F', fontWeight: '600', whiteSpace: 'nowrap' }}>+${incomeDisplay.toLocaleString(undefined, {maximumFractionDigits: 2})}</span>
+                        <span style={{ fontSize: '13px', color: '#C1121F', fontWeight: '600', whiteSpace: 'nowrap' }}>-${parseFloat(doc.total_expenses || 0).toLocaleString(undefined, {maximumFractionDigits: 2})}</span>
                         {imported ? (
                           <span style={{ padding: '5px 12px', borderRadius: '8px', background: 'rgba(42,157,143,0.12)', color: '#2A9D8F', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap' }}>✅ Imported</span>
                         ) : txCount === 0 ? (
                           <span style={{ padding: '5px 12px', borderRadius: '8px', background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.25)', fontSize: '12px', whiteSpace: 'nowrap' }}>No transactions</span>
                         ) : (
-                          <button className="btn-primary" onClick={() => importDocToPersonal(doc)} disabled={importing === doc.id}
+                          <button onClick={() => importDocToPersonal(doc)} disabled={importing === doc.id}
                             style={{ padding: '7px 14px', borderRadius: '8px', border: 'none', background: importing === doc.id ? 'rgba(155,93,229,0.15)' : '#9B5DE5', color: '#fff', fontWeight: '600', fontSize: '12px', cursor: importing === doc.id ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', fontFamily: 'Poppins,sans-serif' }}>
-                            {importing === doc.id ? '⏳...' : `Import ${txCount}`}
+                            {importing === doc.id ? '⏳ Importing...' : `Import ${txCount}`}
                           </button>
                         )}
                       </div>
