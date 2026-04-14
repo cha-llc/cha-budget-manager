@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import Layout from '@/components/Layout';
 import { supabase } from '@/lib/supabase';
-import { useBudgetStore } from '@/lib/store';
+// Uses direct Supabase queries - no Zustand store
 import Link from 'next/link';
 
 const card = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(201,168,76,0.2)', borderRadius: '12px', padding: '1.5rem' };
@@ -26,7 +26,9 @@ const QUICK_LINKS = [
 ];
 
 export default function Dashboard() {
-  const { budgets, expenses, revenue, setBudgets, setExpenses, setRevenue } = useBudgetStore();
+  const [budgets, setBudgets] = useState<any[]>([]);
+  const [expenses, setExpenses] = useState<any[]>([]);
+  const [revenue, setRevenue] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState('');

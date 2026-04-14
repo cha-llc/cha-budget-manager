@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import Layout from '@/components/Layout';
 import { supabase } from '@/lib/supabase';
-import { useBudgetStore } from '@/lib/store';
+// Uses direct Supabase queries - no Zustand store
 
 const card = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(201,168,76,0.2)', borderRadius: '12px', padding: '1.5rem' } as const;
 
@@ -27,7 +27,7 @@ interface Expense {
 }
 
 export default function Expenses() {
-  const { expenses, setExpenses } = useBudgetStore();
+  const [expenses, setExpenses] = useState<any[]>([]);
   const [form, setForm] = useState({ division: 'Consulting', category: 'Software & Tools', amount: '', description: '', date: new Date().toISOString().split('T')[0] });
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);

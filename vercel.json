@@ -3,12 +3,12 @@
   "outputDirectory": ".next",
   "build": {
     "env": {
-      "ANTHROPIC_API_KEY": "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"
+      "ANTHROPIC_KEY_A": "sk-ant-api03-2JSL9va30VT5Gh-P1vYtTw3NbXZasIV3h6cWUZUaNeP6MzDl73Ogyu6-kf2GDfOa",
+      "ANTHROPIC_KEY_B": "QPTux5KrK3QJb1zEydG_WA-VX5J0QAA"
     }
   },
   "functions": {
-    "app/api/ai/route.ts": {
-      "maxDuration": 30
-    }
+    "app/api/ai/route.ts": { "maxDuration": 30 },
+    "app/api/stripe-sync/route.ts": { "maxDuration": 30 }
   }
 }

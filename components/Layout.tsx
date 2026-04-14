@@ -12,14 +12,15 @@ const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: '📊', key: 'dashboard' },
   { href: '/documents', label: 'Documents', icon: '🗂️', key: 'documents' },
   { href: '/expenses', label: 'Expenses', icon: '📝', key: 'expenses' },
+  { href: '/revenue', label: 'Revenue', icon: '💹', key: 'revenue' },
   { href: '/budgets', label: 'Budgets', icon: '💰', key: 'budgets' },
   { href: '/goals', label: 'Goals', icon: '🎯', key: 'goals' },
   { href: '/investments', label: 'Investments', icon: '📈', key: 'investments' },
   { href: '/tax', label: 'Tax Planning', icon: '🧾', key: 'tax' },
   { href: '/networth', label: 'Net Worth', icon: '🏦', key: 'networth' },
   { href: '/analytics', label: 'Analytics', icon: '🔬', key: 'analytics' },
+  { href: '/reports', label: 'Reports', icon: '📄', key: 'reports' },
   { href: '/domination', label: 'Domination Plan', icon: '👑', key: 'domination' },
-  { href: '/personal-budget', label: 'Personal Budget', icon: '🧾', key: 'personal-budget' },
 ];
 
 export default function Layout({ children, activeTab = 'dashboard' }: LayoutProps) {
