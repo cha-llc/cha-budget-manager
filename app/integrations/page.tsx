@@ -3,7 +3,6 @@
 import React from 'react';
 import Layout from '@/components/Layout';
 
-const card = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(201,168,76,0.2)', borderRadius: '12px', padding: '1.5rem' } as const;
 
 const INTEGRATIONS = [
   { name: 'Supabase', status: 'connected', description: 'Private database — all your financial data stored securely', icon: '🗄️', color: '#2A9D8F' },
@@ -33,7 +32,7 @@ export default function Integrations() {
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
           {INTEGRATIONS.map(i => (
-            <div key={i.name} className="card-hover" style={{ ...card, borderLeft: `3px solid ${i.color}` }}>
+            <div key={i.name} className="glass-hover" style={{ borderLeft: `3px solid ${i.color}` }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.75rem' }}>
                 <span style={{ fontSize: '1.8rem' }}>{i.icon}</span>
                 <div>

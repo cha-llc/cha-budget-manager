@@ -4,7 +4,9 @@ import React, { useEffect, useState } from 'react';
 import Layout from '@/components/Layout';
 import { supabase } from '@/lib/supabase';
 
-const card = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(201,168,76,0.2)', borderRadius: '12px', padding: '1.5rem' } as const;
+const card = { background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:'16px', padding:'1.5rem' } as const;
+
+
 
 const INCOME_FIELDS = [
   { key: 'income_business', label: 'Business Revenue (LLC)' },
@@ -142,14 +144,14 @@ export default function TaxPlanning() {
               <option value="married_separately">Married Filing Separately</option>
               <option value="head_of_household">Head of Household</option>
             </select>
-            <button className="btn-primary" onClick={saveEntry} disabled={saving}
+            <button className="btn btn-gold" onClick={saveEntry} disabled={saving}
               style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid rgba(201,168,76,0.4)', background: 'transparent', color: '#C9A84C', fontWeight: '600', fontSize: '13px', cursor: 'pointer' }}>
               {saving ? 'Saving...' : '💾 Save'}
             </button>
           </div>
         </div>
 
-        {loading ? <div style={{ ...card, textAlign: 'center', padding: '2rem' }}><p style={{ color: 'rgba(255,255,255,0.4)', margin: 0 }}>Loading tax data...</p></div> : (
+        {loading ? <div style={{ textAlign: 'center', padding: '2rem' }}><p style={{ color: 'rgba(255,255,255,0.4)', margin: 0 }}>Loading tax data...</p></div> : (
           <>
             {/* Summary */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
@@ -176,7 +178,7 @@ export default function TaxPlanning() {
               </div>
             </div>
 
-            <button className="btn-primary" onClick={runAnalysis} disabled={analyzing}
+            <button className="btn btn-gold" onClick={runAnalysis} disabled={analyzing}
               style={{ width: '100%', padding: '14px', borderRadius: '10px', border: 'none', background: analyzing ? 'rgba(255,255,255,0.08)' : 'linear-gradient(135deg, #9B5DE5, #C9A84C)', color: analyzing ? 'rgba(255,255,255,0.3)' : '#fff', fontWeight: '700', fontSize: '15px', cursor: analyzing ? 'not-allowed' : 'pointer', marginBottom: '1.5rem', fontFamily: 'Poppins,sans-serif' }}>
               {analyzing ? '🧾 Running Tax Analysis...' : '🧾 Run AI Tax Analysis'}
             </button>
@@ -185,14 +187,14 @@ export default function TaxPlanning() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
                   {[{ label: 'Est. Tax Owed', value: `$${(analysis.estimated_tax_owed || 0).toLocaleString()}`, color: '#C1121F' }, { label: 'Effective Rate', value: `${(analysis.effective_rate || 0).toFixed(1)}%`, color: '#C9A84C' }, { label: 'Quarterly Payment', value: `$${(analysis.quarterly_payment || 0).toLocaleString()}`, color: '#9B5DE5' }].map(m => (
-                    <div key={m.label} style={{ ...card, textAlign: 'center' }}>
+                    <div key={m.label} style={{ textAlign: 'center' }}>
                       <p style={{ margin: 0, fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>{m.label}</p>
                       <p style={{ margin: '8px 0 0 0', fontSize: '28px', fontWeight: '700', color: m.color }}>{m.value}</p>
                     </div>
                   ))}
                 </div>
                 {analysis.warnings?.length > 0 && (
-                  <div style={{ ...card, borderLeft: '3px solid #C1121F' }}>
+                  <div style={{ borderLeft: '3px solid #C1121F' }}>
                     <h3 style={{ margin: '0 0 0.75rem 0', color: '#C1121F', fontSize: '14px', fontWeight: '600' }}>⚠️ Warnings</h3>
                     {analysis.warnings.map((w: string, i: number) => <p key={i} style={{ margin: i === 0 ? 0 : '5px 0 0 0', color: 'rgba(255,255,255,0.7)', fontSize: '13px' }}>• {w}</p>)}
                   </div>

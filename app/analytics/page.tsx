@@ -4,7 +4,9 @@ import React, { useState, useEffect } from 'react';
 import Layout from '@/components/Layout';
 import { supabase } from '@/lib/supabase';
 
-const card = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(201,168,76,0.2)', borderRadius: '12px', padding: '1.5rem' } as const;
+const card = { background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:'16px', padding:'1.5rem' } as const;
+
+
 
 const BIZ_CAT_COLORS: Record<string, string> = {
   'Software & Tools': '#9B5DE5', 'Marketing & Ads': '#C9A84C', 'Hosting & Infrastructure': '#2A9D8F',
@@ -160,7 +162,7 @@ export default function Analytics() {
               <option value="quarterly">Quarterly</option>
               <option value="annual">Annual</option>
             </select>
-            <button className="btn-primary" onClick={generateReport} disabled={generating}
+            <button className="btn btn-gold" onClick={generateReport} disabled={generating}
               style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #9B5DE5, #C9A84C)', color: '#fff', fontWeight: '600', fontSize: '13px', cursor: 'pointer' }}>
               {generating ? '📊 Generating...' : '📊 AI Report'}
             </button>
@@ -175,7 +177,7 @@ export default function Analytics() {
             { label: 'Net', value: `${netAmount >= 0 ? '+' : ''}$${netAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: netAmount >= 0 ? '#2A9D8F' : '#C1121F' },
             { label: 'Avg Monthly Net', value: `${avgMonthlyNet >= 0 ? '+' : ''}$${Math.abs(avgMonthlyNet).toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#9B5DE5' },
           ].map(m => (
-            <div key={m.label} className="card-hover" style={card}>
+            <div key={m.label} className="glass-hover" style={card}>
               <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{m.label}</p>
               <p style={{ margin: '6px 0 0 0', fontSize: '22px', fontWeight: '700', color: m.color }}>{m.value}</p>
             </div>
@@ -183,7 +185,7 @@ export default function Analytics() {
         </div>
 
         {/* Bar Chart */}
-        <div style={{ ...card, marginBottom: '1.5rem' }}>
+        <div style={{ marginBottom: '1.5rem' }}>
           <h3 style={{ margin: '0 0 1.5rem 0', color: '#fff', fontSize: '15px', fontWeight: '600' }}>
             {mode === 'business' ? 'Business Revenue vs Expenses' : 'Personal Income vs Spending'} — Last 6 Months
           </h3>
@@ -265,7 +267,7 @@ export default function Analytics() {
         </div>
 
         {/* AI Report */}
-        {generating && <div style={{ ...card, textAlign: 'center', padding: '2.5rem' }}><p style={{ color: '#9B5DE5', fontWeight: '600', margin: 0 }}>📊 Generating AI analysis from live data...</p></div>}
+        {generating && <div style={{ textAlign: 'center', padding: '2.5rem' }}><p style={{ color: '#9B5DE5', fontWeight: '600', margin: 0 }}>📊 Generating AI analysis from live data...</p></div>}
         {report && (
           <div style={card}>
             <h3 style={{ margin: '0 0 1.25rem 0', color: '#9B5DE5', fontSize: '16px', fontWeight: '600' }}>📊 AI Analysis — {mode === 'business' ? 'Business' : 'Personal'} {period.charAt(0).toUpperCase() + period.slice(1)}</h3>

@@ -4,7 +4,9 @@ import React, { useEffect, useState } from 'react';
 import Layout from '@/components/Layout';
 import { supabase } from '@/lib/supabase';
 
-const card = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(201,168,76,0.2)', borderRadius: '12px', padding: '1.5rem' } as const;
+const card = { background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:'16px', padding:'1.5rem' } as const;
+
+
 const DIVISIONS = ['All Divisions', 'Consulting', 'Tea Time Network', 'Digital Tools', 'Books'];
 const CAT_COLORS: Record<string, string> = {
   'Software & Tools': '#9B5DE5', 'Marketing & Ads': '#C9A84C', 'Hosting & Infrastructure': '#2A9D8F',
@@ -212,17 +214,17 @@ export default function Reports() {
           </select>
           {emailSent && <span style={{ fontSize: '12px', color: emailSent.startsWith('✅') ? '#2A9D8F' : '#C1121F' }}>{emailSent}</span>}
           <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.75rem' }}>
-            <button className="btn-primary" onClick={exportCSV} style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid rgba(201,168,76,0.4)', background: 'transparent', color: '#C9A84C', fontWeight: '600', fontSize: '13px', cursor: 'pointer' }}>📥 CSV</button>
-            <button className="btn-primary" onClick={generateReport} disabled={generating} style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #9B5DE5, #2A9D8F)', color: '#fff', fontWeight: '600', fontSize: '13px', cursor: 'pointer' }}>
+            <button className="btn btn-gold" onClick={exportCSV} style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid rgba(201,168,76,0.4)', background: 'transparent', color: '#C9A84C', fontWeight: '600', fontSize: '13px', cursor: 'pointer' }}>📥 CSV</button>
+            <button className="btn btn-gold" onClick={generateReport} disabled={generating} style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #9B5DE5, #2A9D8F)', color: '#fff', fontWeight: '600', fontSize: '13px', cursor: 'pointer' }}>
               {generating ? '📊 Generating...' : '📊 AI Report'}
             </button>
-            <button className="btn-primary" onClick={emailReport} disabled={sendingEmail} style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #C9A84C, #C1121F)', color: '#fff', fontWeight: '600', fontSize: '13px', cursor: 'pointer' }}>
+            <button className="btn btn-gold" onClick={emailReport} disabled={sendingEmail} style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #C9A84C, #C1121F)', color: '#fff', fontWeight: '600', fontSize: '13px', cursor: 'pointer' }}>
               {sendingEmail ? '📧 Sending...' : '📧 Email Report'}
             </button>
           </div>
         </div>
 
-        {loading ? <div style={{ ...card, textAlign: 'center', padding: '3rem' }}><p style={{ color: 'rgba(255,255,255,0.4)', margin: 0 }}>Loading...</p></div> : (
+        {loading ? <div style={{ textAlign: 'center', padding: '3rem' }}><p style={{ color: 'rgba(255,255,255,0.4)', margin: 0 }}>Loading...</p></div> : (
           <>
             {/* ═══ BUSINESS MODE ═══ */}
             {mode === 'business' && (
@@ -316,7 +318,7 @@ export default function Reports() {
 
                 {/* Budget vs Actual */}
                 {persWithBudget.length > 0 && (
-                  <div style={{ ...card, marginBottom: '1.5rem' }}>
+                  <div style={{ marginBottom: '1.5rem' }}>
                     <h3 style={{ margin: '0 0 1.25rem 0', color: '#9B5DE5', fontSize: '15px', fontWeight: '600' }}>📊 Budget vs Actual</h3>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '0.75rem' }}>
                       {persWithBudget.map(cat => {
@@ -402,9 +404,9 @@ export default function Reports() {
             )}
 
             {/* AI Report */}
-            {generating && <div style={{ ...card, textAlign: 'center', padding: '2.5rem', marginTop: '1.5rem' }}><p style={{ color: '#9B5DE5', fontWeight: '600', margin: 0 }}>📊 Generating AI financial analysis...</p></div>}
+            {generating && <div style={{ textAlign: 'center', padding: '2.5rem', marginTop: '1.5rem' }}><p style={{ color: '#9B5DE5', fontWeight: '600', margin: 0 }}>📊 Generating AI financial analysis...</p></div>}
             {aiReport && (
-              <div style={{ ...card, marginTop: '1.5rem' }}>
+              <div style={{ marginTop: '1.5rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
                   <h3 style={{ margin: 0, color: '#9B5DE5', fontSize: '16px', fontWeight: '600' }}>📊 AI Financial Report — {mode === 'personal' ? 'Personal' : 'Business'}</h3>
                   {aiReport.financial_health && (

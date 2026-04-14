@@ -4,7 +4,9 @@ import React, { useEffect, useState } from 'react';
 import Layout from '@/components/Layout';
 import { supabase } from '@/lib/supabase';
 
-const card = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(201,168,76,0.2)', borderRadius: '12px', padding: '1.5rem' } as const;
+const card = { background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:'16px', padding:'1.5rem' } as const;
+
+
 
 const PRODUCTS = ['BrandPulse', 'Clarity Engine', 'Flagged', 'Freedom Era Audit', 'Business Ops Fixer', 'Burned-Out Professional Reset', 'We Need to Talk', 'First-Gen Table', 'Patreon', 'Consulting', 'Books', 'Other'];
 const SOURCES = ['Stripe', 'Gumroad', 'Patreon', 'Direct', 'HubSpot', 'Other'];
@@ -56,22 +58,22 @@ export default function Revenue() {
           </div>
           <div style={{ display: 'flex', gap: '0.75rem' }}>
             {exportMsg && <span style={{ color: '#2A9D8F', fontSize: '13px', alignSelf: 'center' }}>{exportMsg}</span>}
-            <button className="btn-primary" onClick={exportCSV} style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid rgba(201,168,76,0.4)', background: 'transparent', color: '#C9A84C', fontWeight: '600', fontSize: '13px', cursor: 'pointer' }}>📥 CSV</button>
-            <button className="btn-primary" onClick={() => setShowForm(!showForm)} style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', background: '#C9A84C', color: '#1A1A2E', fontWeight: '700', fontSize: '13px', cursor: 'pointer' }}>+ Add Revenue</button>
+            <button className="btn btn-gold" onClick={exportCSV} style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid rgba(201,168,76,0.4)', background: 'transparent', color: '#C9A84C', fontWeight: '600', fontSize: '13px', cursor: 'pointer' }}>📥 CSV</button>
+            <button className="btn btn-gold" onClick={() => setShowForm(!showForm)} style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', background: '#C9A84C', color: '#1A1A2E', fontWeight: '700', fontSize: '13px', cursor: 'pointer' }}>+ Add Revenue</button>
           </div>
         </div>
 
         {/* KPIs */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
-          <div className="card-hover" style={{ ...card, borderLeft: '3px solid #2A9D8F' }}>
+          <div className="glass-hover" style={{ borderLeft: '3px solid #2A9D8F' }}>
             <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Revenue</p>
             <p style={{ margin: '6px 0 0 0', fontSize: '32px', fontWeight: '700', color: '#2A9D8F', fontFamily: "'Lora', serif" }}>${total.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
           </div>
-          <div className="card-hover" style={{ ...card, borderLeft: '3px solid #C9A84C' }}>
+          <div className="glass-hover" style={{ borderLeft: '3px solid #C9A84C' }}>
             <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Transactions</p>
             <p style={{ margin: '6px 0 0 0', fontSize: '32px', fontWeight: '700', color: '#C9A84C', fontFamily: "'Lora', serif" }}>{revenue.length}</p>
           </div>
-          <div className="card-hover" style={{ ...card, borderLeft: '3px solid #9B5DE5' }}>
+          <div className="glass-hover" style={{ borderLeft: '3px solid #9B5DE5' }}>
             <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Top Product</p>
             <p style={{ margin: '6px 0 0 0', fontSize: '18px', fontWeight: '700', color: '#9B5DE5' }}>{topProducts[0]?.[0] || '—'}</p>
           </div>
@@ -79,7 +81,7 @@ export default function Revenue() {
 
         {/* Product Breakdown */}
         {topProducts.length > 0 && (
-          <div style={{ ...card, marginBottom: '1.5rem' }}>
+          <div style={{ marginBottom: '1.5rem' }}>
             <h3 style={{ margin: '0 0 1rem 0', color: '#fff', fontSize: '15px', fontWeight: '600' }}>Revenue by Product</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.75rem' }}>
               {topProducts.map(([name, amt]) => (
@@ -95,7 +97,7 @@ export default function Revenue() {
 
         {/* Add Form */}
         {showForm && (
-          <div style={{ ...card, marginBottom: '1.5rem', borderColor: 'rgba(42,157,143,0.5)' }}>
+          <div style={{ marginBottom: '1.5rem', borderColor: 'rgba(42,157,143,0.5)' }}>
             <h3 style={{ margin: '0 0 1.25rem 0', color: '#2A9D8F', fontSize: '15px', fontWeight: '600' }}>Record Revenue</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1rem' }}>
               <div><label>Product / Service</label><select value={form.product_name} onChange={e => setForm({ ...form, product_name: e.target.value })}>{PRODUCTS.map(p => <option key={p}>{p}</option>)}</select></div>
@@ -104,7 +106,7 @@ export default function Revenue() {
               <div><label>Date</label><input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
             </div>
             <div style={{ display: 'flex', gap: '0.75rem' }}>
-              <button className="btn-primary" onClick={handleAdd} disabled={saving} style={{ padding: '10px 24px', borderRadius: '8px', border: 'none', background: '#2A9D8F', color: '#fff', fontWeight: '700', cursor: 'pointer' }}>{saving ? 'Saving...' : 'Record Revenue'}</button>
+              <button className="btn btn-gold" onClick={handleAdd} disabled={saving} style={{ padding: '10px 24px', borderRadius: '8px', border: 'none', background: '#2A9D8F', color: '#fff', fontWeight: '700', cursor: 'pointer' }}>{saving ? 'Saving...' : 'Record Revenue'}</button>
               <button onClick={() => setShowForm(false)} style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.2)', background: 'transparent', color: 'rgba(255,255,255,0.6)', cursor: 'pointer' }}>Cancel</button>
             </div>
           </div>

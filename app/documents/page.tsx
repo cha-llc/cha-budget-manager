@@ -6,7 +6,7 @@ import { normalizeDocType, defaultDestination, buildPersonalInserts, buildBusine
 import Layout from '@/components/Layout';
 import { supabase } from '@/lib/supabase';
 
-const card = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(201,168,76,0.2)', borderRadius: '12px', padding: '1.5rem' } as const;
+const card = { background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:'16px', padding:'1.5rem' } as const;
 
 const DOC_TYPES = [
   { value: 'auto', label: '🤖 Auto-Detect' },
@@ -490,7 +490,7 @@ export default function Documents() {
             { label: 'Total Expenses Extracted', value: `$${totalExpenses.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#C1121F' },
             { label: 'Net Cash Flow', value: `${netCashflow >= 0 ? '+' : ''}$${Math.abs(netCashflow).toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: netCashflow >= 0 ? '#2A9D8F' : '#C1121F' },
           ].map(m => (
-            <div key={m.label} className="card-hover" style={card}>
+            <div key={m.label} className="glass-hover" style={card}>
               <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{m.label}</p>
               <p style={{ margin: '6px 0 0 0', fontSize: '22px', fontWeight: '700', color: m.color }}>{m.value}</p>
             </div>
@@ -725,7 +725,7 @@ export default function Documents() {
                   const destLabel = BUDGET_DESTINATIONS.find(d => d.value === doc.budget_destination)?.label || '📁 Saved';
                   const destColor = BUDGET_DESTINATIONS.find(d => d.value === doc.budget_destination)?.color || 'rgba(255,255,255,0.3)';
                   return (
-                    <div key={doc.id} className="card-hover" style={{ ...card, display: 'grid', gridTemplateColumns: '2fr auto auto auto auto auto', gap: '1rem', alignItems: 'center', borderLeft: `3px solid ${destColor}` }}>
+                    <div key={doc.id} className="glass-hover" style={{ ...card, display: 'grid', gridTemplateColumns: '2fr auto auto auto auto auto', gap: '1rem', alignItems: 'center', borderLeft: `3px solid ${destColor}` }}>
                       <div>
                         <p style={{ margin: 0, color: '#fff', fontWeight: '600', fontSize: '14px' }}>{doc.file_name}</p>
                         <p style={{ margin: '2px 0 0 0', color: 'rgba(255,255,255,0.4)', fontSize: '12px' }}>
