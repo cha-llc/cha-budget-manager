@@ -332,18 +332,34 @@ export default function Documents() {
   };
 
   const analyzeAll = async () => {
-    const ready = queue.filter(q => q.status === 'ready' || q.status === 'pending');
-    if (!ready.length) return;
-    setProcessing(true);
-    for (const item of ready) {
-      // If still in pending/detecting, wait briefly
-      if (item.status === 'detecting') {
-        await new Promise(r => setTimeout(r, 1500));
+    // Wait for any items still being auto-detected before starting analysis
+    const waitForDetection = async () => {
+      const maxWait = 15000; // 15s max wait
+      const start = Date.now();
+      while (Date.now() - start < maxWait) {
+        const currentQueue = await new Promise<QueuedFile[]>(resolve => {
+          setQueue(q => { resolve(q); return q; });
+        });
+        const stillDetecting = currentQueue.some(q => q.status === 'detecting');
+        if (!stillDetecting) break;
+        await new Promise(r => setTimeout(r, 500));
       }
-      await analyzeFile(item);
-    }
-    setProcessing(false);
-    fetchHistory();
+    };
+    await waitForDetection();
+    // Re-read queue after detection completes
+    setQueue(prev => {
+      const ready = prev.filter(q => q.status === 'ready' || q.status === 'pending');
+      if (!ready.length) return prev;
+      setProcessing(true);
+      (async () => {
+        for (const item of ready) {
+          await analyzeFile(item);
+        }
+        setProcessing(false);
+        fetchHistory();
+      })();
+      return prev;
+    });
   };
 
   const deleteDoc = async (id: string) => {

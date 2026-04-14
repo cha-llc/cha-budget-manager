@@ -84,7 +84,7 @@ export default function Dashboard() {
           model: 'claude-sonnet-4-6',
           max_tokens: 1000,
           system: 'You are a financial advisor AI. Give a direct, strategic 2-3 sentence insight. No fluff.',
-          messages: [{ role: 'user', content: `C.H.A. LLC financial snapshot: Budget $${totalBudget}/mo, Spent $${totalSpent}, Revenue $${totalRevenue}, Net $${netCashFlow}. 5 products just launched April 10-11, 2026 with $0 revenue. Promos start April 14. Give a sharp, actionable insight for right now.` }]
+          messages: [{ role: 'user', content: `C.H.A. LLC financial snapshot: Budget $${totalBudget}/mo, Expenses $${totalSpent}, Revenue $${totalRevenue} (${revenue.length} sales), Net $${netCashFlow}. 5 products live: BrandPulse $47, Clarity Engine $37, Flagged $4.99/mo, Freedom Era Audit $150, Business Ops Fixer $497. Give a sharp, actionable insight for right now.` }]
         })
       });
       const data = await res.json();
@@ -120,13 +120,17 @@ export default function Dashboard() {
           </p>
         </div>
 
-        {/* Alert: Product Launch */}
-        <div style={{ padding: '1rem 1.25rem', background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.4)', borderRadius: '10px', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        {/* Status Banner — dynamic based on actual revenue */}
+        <div style={{ padding: '1rem 1.25rem', background: totalRevenue > 0 ? 'rgba(42,157,143,0.1)' : 'rgba(201,168,76,0.1)', border: `1px solid ${totalRevenue > 0 ? 'rgba(42,157,143,0.4)' : 'rgba(201,168,76,0.4)'}`, borderRadius: '10px', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <p style={{ margin: '0 0 2px 0', color: '#C9A84C', fontWeight: '700', fontSize: '14px' }}>🚀 Product Launch Sprint Active</p>
-            <p style={{ margin: 0, color: 'rgba(255,255,255,0.6)', fontSize: '13px' }}>5 products launched April 10–11 • Promos go live April 14 • Revenue pipeline open</p>
+            <p style={{ margin: '0 0 2px 0', color: totalRevenue > 0 ? '#2A9D8F' : '#C9A84C', fontWeight: '700', fontSize: '14px' }}>
+              {totalRevenue > 0 ? `💰 Revenue Active — $${totalRevenue.toLocaleString(undefined, {maximumFractionDigits: 0})} earned` : '🚀 Products Live — Revenue Pipeline Open'}
+            </p>
+            <p style={{ margin: 0, color: 'rgba(255,255,255,0.6)', fontSize: '13px' }}>
+              5 products live • {totalRevenue > 0 ? `${revenue.length} sale${revenue.length !== 1 ? 's' : ''} recorded • Sync Stripe for latest` : 'Click Sync Stripe Sales to pull in payments'}
+            </p>
           </div>
-          <Link href="/domination" style={{ padding: '8px 16px', borderRadius: '8px', background: '#C9A84C', color: '#1A1A2E', fontWeight: '700', fontSize: '12px', textDecoration: 'none', whiteSpace: 'nowrap' }}>View Plan →</Link>
+          <Link href="/domination" style={{ padding: '8px 16px', borderRadius: '8px', background: totalRevenue > 0 ? '#2A9D8F' : '#C9A84C', color: '#1A1A2E', fontWeight: '700', fontSize: '12px', textDecoration: 'none', whiteSpace: 'nowrap' }}>View Plan →</Link>
         </div>
 
         {/* KPIs */}
