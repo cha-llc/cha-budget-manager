@@ -1,74 +1,109 @@
-// BUILD_V3_MULTIUPLOAD
+// BUILD_V5_SMART_ROUTING
 'use client';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Layout from '@/components/Layout';
 import { supabase } from '@/lib/supabase';
 
 const card = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(201,168,76,0.2)', borderRadius: '12px', padding: '1.5rem' } as const;
 
 const DOC_TYPES = [
-  { value: 'bank_statement', label: 'Bank Statement' },
+  { value: 'auto', label: '🤖 Auto-Detect' },
   { value: 'paycheck_stub', label: 'Paycheck / Pay Stub' },
-  { value: 'receipt', label: 'Receipt / Invoice' },
+  { value: 'bank_statement', label: 'Bank Statement' },
   { value: 'tax_form', label: 'Tax Form (W2, 1099)' },
+  { value: 'receipt', label: 'Business Receipt / Invoice' },
   { value: 'investment', label: 'Investment Statement' },
   { value: 'utility_bill', label: 'Utility Bill' },
 ];
 
+// Where transactions from this doc will be saved
+const BUDGET_DESTINATIONS = [
+  { value: 'personal', label: '🧾 Personal Budget', color: '#9B5DE5' },
+  { value: 'business', label: '🏢 Business Budget', color: '#C9A84C' },
+  { value: 'both', label: '↔️ Both', color: '#2A9D8F' },
+  { value: 'none', label: '📁 Save Only', color: 'rgba(255,255,255,0.3)' },
+];
+
+// AI auto-detects doc type and suggests destination
+const AUTO_DETECT_RULES: Record<string, { destination: 'personal' | 'business' | 'both' | 'none'; label: string }> = {
+  paycheck_stub: { destination: 'personal', label: 'Paycheck / Pay Stub' },
+  pay_stub: { destination: 'personal', label: 'Paycheck / Pay Stub' },
+  bank_statement: { destination: 'personal', label: 'Bank Statement' },
+  checking_statement: { destination: 'personal', label: 'Bank Statement' },
+  savings_statement: { destination: 'personal', label: 'Bank Statement' },
+  w2: { destination: 'personal', label: 'Tax Form (W2)' },
+  '1099': { destination: 'personal', label: 'Tax Form (1099)' },
+  tax_form: { destination: 'personal', label: 'Tax Form' },
+  receipt: { destination: 'business', label: 'Business Receipt' },
+  invoice: { destination: 'business', label: 'Business Invoice' },
+  business_expense: { destination: 'business', label: 'Business Expense' },
+  investment_statement: { destination: 'personal', label: 'Investment Statement' },
+  utility_bill: { destination: 'business', label: 'Utility Bill' },
+};
+
 interface QueuedFile {
   id: string;
   file: File;
-  docType: string;
-  status: 'pending' | 'analyzing' | 'done' | 'error';
+  docType: string;           // user-selected or auto-detected
+  detectedType: string;      // what AI identified (display only)
+  destination: 'personal' | 'business' | 'both' | 'none';
+  status: 'pending' | 'detecting' | 'ready' | 'analyzing' | 'done' | 'error';
   result?: any;
   error?: string;
 }
 
-const AI_SYSTEM = `You are a precise financial document analyst. Extract ALL financial data accurately.
+const AI_DETECT_SYSTEM = `You are a financial document classifier. Look at the document and identify what type it is.
+Return ONLY a valid JSON object with no markdown:
+{"doc_type":"string","destination":"personal|business|both","confidence":"high|medium|low","reason":"string"}
+
+doc_type must be one of: paycheck_stub, bank_statement, tax_form, receipt, invoice, investment_statement, utility_bill, credit_card_statement, other
+destination rules:
+- personal: pay stubs, personal bank statements, W2/1099, personal investment statements, personal tax returns
+- business: receipts, invoices, business expense reports, vendor bills
+- both: if the document contains both personal income AND business transactions
+- none: if unclear`;
+
+const AI_ANALYZE_SYSTEM = `You are a precise financial document analyst. Extract ALL financial data accurately.
 
 CRITICAL RULES FOR EACH DOCUMENT TYPE:
 
 PAY STUB / PAYCHECK:
-- total_income = NET PAY (the actual take-home amount after all deductions). This is the "Net Pay", "Net Amount", or "Amount Paid" field.
-- total_expenses = total deductions (federal tax + state tax + FICA + social security + medicare + health insurance + 401k + all other withholdings combined)
+- total_income = NET PAY (take-home after all deductions). This is the "Net Pay", "Net Amount", or "Amount Paid" field.
+- total_expenses = sum of all deductions (federal tax + state tax + FICA + social security + medicare + health insurance + 401k + all other withholdings)
 - net_cashflow = total_income (net pay)
-- transactions: one credit entry for NET PAY amount, then debit entries for each individual deduction line (Federal Tax, State Tax, Social Security, Medicare, Health Insurance, 401k, etc.)
+- transactions: one credit entry for NET PAY amount, then one debit entry per deduction line
 - key_figures MUST include: Gross Pay, Net Pay (clearly labeled), Pay Period, YTD Gross, YTD Net, each deduction amount
+- NEVER use gross pay as total_income. Net pay is ALWAYS less than gross pay.
 
 BANK STATEMENT:
-- total_income = sum of ALL deposits, credits, and incoming transfers
-- total_expenses = sum of ALL withdrawals, debits, charges, and outgoing payments
-- net_cashflow = total_income - total_expenses
-- transactions: every line item with date, description, amount, type (credit=deposit/income, debit=withdrawal/charge)
+- total_income = sum of ALL deposits and credits
+- total_expenses = sum of ALL withdrawals and debits
+- transactions: every single line item
 - key_figures: Opening Balance, Closing Balance, Total Deposits, Total Withdrawals
 
 RECEIPT / INVOICE:
-- total_expenses = total amount paid (including tax)
-- total_income = 0
-- net_cashflow = -total_expenses
-- transactions: one debit entry for the total, itemized lines if visible
-- key_figures: subtotal, tax amount, total paid, merchant name
+- total_expenses = total amount paid. total_income = 0.
+- transactions: one debit for total, plus itemized lines if visible
 
 TAX FORM (W2, 1099):
 - total_income = Box 1 wages (W2) or total compensation (1099)
 - total_expenses = total taxes withheld
-- key_figures: all box values clearly labeled
+- key_figures: ALL box values clearly labeled
 
-GENERAL RULES (ALL DOCUMENTS):
+GENERAL RULES:
 1. Return ONLY a valid JSON object. No text before or after. No markdown fences.
-2. Amounts must be plain numbers only — no $ signs, no commas (e.g. 1234.56 not $1,234.56).
-3. Dates in YYYY-MM-DD format where possible.
-4. NEVER confuse gross pay with net pay on pay stubs. Net pay is ALWAYS less than gross pay.
-5. If a value is unclear, read it carefully again before estimating.
-6. period = pay period dates or statement period (e.g. "2025-11-01 to 2025-11-15").
+2. Amounts = plain numbers only (1234.56 not $1,234.56).
+3. Dates in YYYY-MM-DD format.
+4. period = pay period or statement period.
 
-Return this exact JSON:
+Return exactly:
 {"doc_type":"string","period":"string","summary":"string","key_figures":[{"label":"string","value":"string","category":"income|expense|balance|other"}],"transactions":[{"date":"string","description":"string","amount":0,"type":"credit|debit"}],"tax_relevant":["string"],"alerts":["string"],"total_income":0,"total_expenses":0,"net_cashflow":0}`;
 
 export default function Documents() {
   const [queue, setQueue] = useState<QueuedFile[]>([]);
-  const [defaultDocType, setDefaultDocType] = useState('bank_statement');
+  const [defaultDocType, setDefaultDocType] = useState('auto');
+  const [defaultDestination, setDefaultDestination] = useState<'personal' | 'business' | 'both' | 'none'>('personal');
   const [processing, setProcessing] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [history, setHistory] = useState<any[]>([]);
@@ -84,55 +119,108 @@ export default function Documents() {
     setLoadingHistory(false);
   };
 
-  // Bulletproof file adder — takes a plain JS array, never a FileList
-  const addFilesFromArray = useCallback((files: File[], docType: string) => {
+  const updateItem = (id: string, updates: Partial<QueuedFile>) =>
+    setQueue(prev => prev.map(q => q.id === id ? { ...q, ...updates } : q));
+
+  const addFilesFromArray = useCallback((files: File[], docType: string, destination: 'personal' | 'business' | 'both' | 'none') => {
     const valid = files.filter(f =>
-      f.type === 'application/pdf' ||
-      f.type === 'image/png' ||
-      f.type === 'image/jpeg' ||
-      f.type === 'image/jpg' ||
+      f.type === 'application/pdf' || f.type === 'image/png' ||
+      f.type === 'image/jpeg' || f.type === 'image/jpg' ||
       /\.(pdf|png|jpg|jpeg)$/i.test(f.name)
     );
-    if (valid.length === 0) return;
+    if (!valid.length) return;
     const items: QueuedFile[] = valid.map(f => ({
       id: `${f.name}-${f.size}-${Date.now()}-${Math.random()}`,
       file: f,
       docType,
-      status: 'pending',
+      detectedType: '',
+      destination,
+      status: docType === 'auto' ? 'pending' : 'ready',
     }));
     setQueue(prev => [...prev, ...items]);
+    // Auto-detect immediately for each file if docType is 'auto'
+    if (docType === 'auto') {
+      items.forEach(item => autoDetectFile(item));
+    }
   }, []);
 
-  // Hidden input change handler
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
-    // Snapshot to plain array IMMEDIATELY — before any resets
+    if (!e.target.files?.length) return;
     const snapshot: File[] = [];
-    for (let i = 0; i < e.target.files.length; i++) {
-      snapshot.push(e.target.files[i]);
-    }
-    addFilesFromArray(snapshot, defaultDocType);
-    // Reset input after delay so same files can be re-selected
+    for (let i = 0; i < e.target.files.length; i++) snapshot.push(e.target.files[i]);
+    addFilesFromArray(snapshot, defaultDocType, defaultDestination);
     const target = e.target;
     setTimeout(() => { target.value = ''; }, 200);
   };
 
-  // Drop handler
   const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOver(false);
-    if (!e.dataTransfer.files || e.dataTransfer.files.length === 0) return;
+    e.preventDefault(); e.stopPropagation(); setDragOver(false);
+    if (!e.dataTransfer.files?.length) return;
     const snapshot: File[] = [];
-    for (let i = 0; i < e.dataTransfer.files.length; i++) {
-      snapshot.push(e.dataTransfer.files[i]);
-    }
-    addFilesFromArray(snapshot, defaultDocType);
+    for (let i = 0; i < e.dataTransfer.files.length; i++) snapshot.push(e.dataTransfer.files[i]);
+    addFilesFromArray(snapshot, defaultDocType, defaultDestination);
   };
 
-  const updateItem = (id: string, updates: Partial<QueuedFile>) =>
-    setQueue(prev => prev.map(q => q.id === id ? { ...q, ...updates } : q));
+  // STEP 1: Quick AI scan to identify doc type + suggest destination
+  const autoDetectFile = async (item: QueuedFile) => {
+    updateItem(item.id, { status: 'detecting' });
+    try {
+      const base64 = await new Promise<string>((res, rej) => {
+        const reader = new FileReader();
+        reader.onload = () => res((reader.result as string).split(',')[1]);
+        reader.onerror = rej;
+        reader.readAsDataURL(item.file);
+      });
+      const isPdf = item.file.type === 'application/pdf' || item.file.name.toLowerCase().endsWith('.pdf');
+      const mediaType = isPdf ? 'application/pdf' : (item.file.type || 'image/jpeg');
 
+      const res = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 300,
+          system: AI_DETECT_SYSTEM,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: isPdf ? 'document' : 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
+              { type: 'text', text: 'Identify this financial document type and where its transactions should go (personal budget, business budget, or both).' }
+            ]
+          }]
+        })
+      });
+
+      const data = await res.json();
+      const text = data.content?.find((c: any) => c.type === 'text')?.text || '';
+      const detected = JSON.parse(text.replace(/```json|```/g, '').trim());
+
+      // Map detected type to our DOC_TYPES values
+      const typeMap: Record<string, string> = {
+        paycheck_stub: 'paycheck_stub', pay_stub: 'paycheck_stub',
+        bank_statement: 'bank_statement', checking_statement: 'bank_statement', savings_statement: 'bank_statement',
+        tax_form: 'tax_form', w2: 'tax_form', '1099': 'tax_form',
+        receipt: 'receipt', invoice: 'receipt',
+        investment_statement: 'investment',
+        utility_bill: 'utility_bill',
+        credit_card_statement: 'bank_statement',
+      };
+      const mappedType = typeMap[detected.doc_type?.toLowerCase()] || 'bank_statement';
+      const dest = (['personal','business','both','none'].includes(detected.destination) ? detected.destination : 'personal') as QueuedFile['destination'];
+
+      updateItem(item.id, {
+        docType: mappedType,
+        detectedType: detected.doc_type || 'unknown',
+        destination: dest,
+        status: 'ready',
+      });
+    } catch {
+      // Detection failed — leave as pending so user can manually set
+      updateItem(item.id, { status: 'ready', detectedType: 'detection failed' });
+    }
+  };
+
+  // STEP 2: Full analysis + save
   const analyzeFile = async (item: QueuedFile) => {
     updateItem(item.id, { status: 'analyzing' });
     try {
@@ -142,10 +230,20 @@ export default function Documents() {
         reader.onerror = rej;
         reader.readAsDataURL(item.file);
       });
-
       const isPdf = item.file.type === 'application/pdf' || item.file.name.toLowerCase().endsWith('.pdf');
       const mediaType = isPdf ? 'application/pdf' : (item.file.type || 'image/jpeg');
       const docLabel = DOC_TYPES.find(d => d.value === item.docType)?.label || item.docType;
+
+      // Type-specific instructions
+      const typeHint = item.docType === 'paycheck_stub'
+        ? 'IMPORTANT: Find NET PAY (take-home after deductions) = total_income. NOT gross pay. List every deduction as a debit transaction.'
+        : item.docType === 'bank_statement'
+        ? 'Extract every transaction. Credits=deposits/income. Debits=withdrawals/charges. Be precise.'
+        : item.docType === 'tax_form'
+        ? 'Extract all box values. Box 1 wages (W2) or total compensation (1099) = total_income. Total taxes withheld = total_expenses.'
+        : item.docType === 'receipt'
+        ? 'Total amount paid = total_expenses. total_income = 0. Itemize all line items as debit transactions.'
+        : 'Extract all financial figures accurately.';
 
       const res = await fetch('/api/ai', {
         method: 'POST',
@@ -153,22 +251,12 @@ export default function Documents() {
         body: JSON.stringify({
           model: 'claude-sonnet-4-20250514',
           max_tokens: 2000,
-          system: AI_SYSTEM,
+          system: AI_ANALYZE_SYSTEM,
           messages: [{
             role: 'user',
             content: [
               { type: isPdf ? 'document' : 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
-              { type: 'text', text: `This document is a ${docLabel}. ${
-                item.docType === 'paycheck_stub'
-                  ? 'IMPORTANT: Find the NET PAY (take-home amount after all deductions) and use that as total_income. Do NOT use gross pay as total_income. List every deduction line individually as a debit transaction.'
-                  : item.docType === 'bank_statement'
-                  ? 'Extract every single transaction. Credits are deposits/income. Debits are withdrawals/charges. Calculate totals accurately.'
-                  : item.docType === 'tax_form'
-                  ? 'Extract all box values. Use Box 1 (W2) or total compensation (1099) as total_income. Total taxes withheld as total_expenses.'
-                  : item.docType === 'receipt'
-                  ? 'The total amount paid is total_expenses. Itemize all line items as debit transactions.'
-                  : 'Extract all financial figures accurately.'
-              } Be precise with every number.` }
+              { type: 'text', text: `Document type: ${docLabel}. ${typeHint} Be precise with every number.` }
             ]
           }]
         })
@@ -177,11 +265,10 @@ export default function Documents() {
       const data = await res.json();
       const text = data.content?.find((c: any) => c.type === 'text')?.text || '';
       if (!text) throw new Error('No response from AI');
-
       const parsed = JSON.parse(text.replace(/```json|```/g, '').trim());
 
-      // Save to Supabase
-      await supabase.from('budget_documents').insert([{
+      // Save to budget_documents
+      const { data: savedDoc } = await supabase.from('budget_documents').insert([{
         file_name: item.file.name,
         file_size_kb: parseFloat((item.file.size / 1024).toFixed(1)),
         doc_type: parsed.doc_type || docLabel,
@@ -195,114 +282,143 @@ export default function Documents() {
         total_income: parsed.total_income || 0,
         total_expenses: parsed.total_expenses || 0,
         net_cashflow: parsed.net_cashflow || 0,
-      }]);
+        budget_destination: item.destination,
+      }]).select();
 
-      // Smart auto-categorization: only post ACTUAL business transactions to business tables
-      // Personal documents (pay stubs, personal bank statements) go to personal_transactions only
-      const docTypeLower = (parsed.doc_type || item.docType || '').toLowerCase();
-      const isPayStub = docTypeLower.includes('pay') || docTypeLower.includes('stub') || docTypeLower.includes('paycheck');
-      const isBankStatement = docTypeLower.includes('bank') || docTypeLower.includes('statement');
-      const isBusinessDoc = docTypeLower.includes('invoice') || docTypeLower.includes('receipt') || docTypeLower.includes('tax');
+      const docId = savedDoc?.[0]?.id || null;
 
-      if (isPayStub) {
-        // Pay stubs → personal_transactions ONLY. Never touch business revenue/expenses.
-        const kf = parsed.key_figures || [];
-        const netPayFig = kf.find((k: any) => k.label?.toLowerCase().includes('net pay'));
-        const netPay = netPayFig
-          ? parseFloat(netPayFig.value?.replace(/[$,]/g, '') || '0')
-          : parseFloat(parsed.net_cashflow || '0');
+      // Route transactions based on user-selected destination
+      await routeTransactions(item, parsed, docId);
 
-        const payDate = parsed.transactions?.[0]?.date || new Date().toISOString().split('T')[0];
-        const skipDescs = ['deposit to checking', 'deposit to savings', 'direct deposit', 'savings deposit'];
-
-        const personalInserts: any[] = [];
-        if (netPay > 0) {
-          personalInserts.push({
-            description: `Net Pay — ${parsed.period || 'Pay Period'}`,
-            amount: netPay, type: 'income', category_name: 'Salary / Wages',
-            date: payDate, source: `document:${item.file.name}`, source_doc_id: null,
-          });
-        }
-        (parsed.transactions || []).filter((t: any) => {
-          if (t.type !== 'debit') return false;
-          const d = (t.description || '').toLowerCase();
-          return !skipDescs.some(s => d.includes(s));
-        }).forEach((t: any) => {
-          const d = t.description.toLowerCase();
-          let cat = 'Personal Care';
-          if (d.includes('federal') || d.includes('state tax') || d.includes('fica') || d.includes('social security') || d.includes('medicare') || d.includes('income tax')) cat = 'Taxes';
-          else if (d.includes('medical') || d.includes('dental') || d.includes('vision') || d.includes('health') || d.includes('hospital')) cat = 'Health & Wellness';
-          else if (d.includes('401k') || d.includes('401(k)') || d.includes('retirement') || d.includes('emergency')) cat = 'Emergency Fund';
-          else if (d.includes('savings')) cat = 'Savings';
-          personalInserts.push({
-            description: t.description, amount: Math.abs(parseFloat(t.amount) || 0),
-            type: 'expense', category_name: cat,
-            date: t.date || payDate, source: `document:${item.file.name}`, source_doc_id: null,
-          });
-        });
-        if (personalInserts.length > 0) {
-          await supabase.from('personal_transactions').insert(personalInserts);
-        }
-
-      } else if (isBankStatement) {
-        // Bank statements → personal_transactions ONLY. Not business tables.
-        const txInserts = (parsed.transactions || [])
-          .filter((t: any) => Math.abs(parseFloat(t.amount) || 0) > 0)
-          .map((t: any) => {
-            const type = t.type === 'credit' ? 'income' : 'expense';
-            const d = (t.description || '').toLowerCase();
-            let cat = type === 'income' ? 'Other Income' : 'Personal Care';
-            if (type === 'income') {
-              if (d.includes('payroll') || d.includes('direct deposit') || d.includes('salary') || d.includes('net pay')) cat = 'Salary / Wages';
-              else if (d.includes('transfer') || d.includes('interest')) cat = 'Other Income';
-            } else {
-              if (d.includes('rent') || d.includes('mortgage')) cat = 'Housing / Rent';
-              else if (d.includes('food') || d.includes('grocery') || d.includes('walmart') || d.includes('kroger') || d.includes('publix') || d.includes('aldi')) cat = 'Food & Groceries';
-              else if (d.includes('gas') || d.includes('uber') || d.includes('lyft') || d.includes('transport')) cat = 'Transportation';
-              else if (d.includes('medical') || d.includes('dental') || d.includes('health') || d.includes('pharmacy')) cat = 'Health & Wellness';
-              else if (d.includes('netflix') || d.includes('spotify') || d.includes('entertainment') || d.includes('amazon prime')) cat = 'Entertainment';
-              else if (d.includes('savings')) cat = 'Savings';
-            }
-            return {
-              description: t.description || 'Bank Transaction', amount: Math.abs(parseFloat(t.amount) || 0),
-              type, category_name: cat,
-              date: t.date || new Date().toISOString().split('T')[0],
-              source: `document:${item.file.name}`, source_doc_id: null,
-            };
-          });
-        if (txInserts.length > 0) {
-          await supabase.from('personal_transactions').insert(txInserts);
-        }
-
-      } else if (isBusinessDoc) {
-        // Receipts/invoices/tax forms → business expenses table with proper categorization
-        const debits = (parsed.transactions || []).filter((t: any) => t.type === 'debit');
-        if (debits.length > 0) {
-          await supabase.from('expenses').insert(debits.map((t: any) => ({
-            division: 'Consulting',
-            category: 'Professional Services',
-            amount: Math.abs(parseFloat(t.amount) || 0),
-            description: t.description || 'Document Import',
-            date: t.date || new Date().toISOString().split('T')[0],
-            source: 'document_import',
-            doc_source: item.file.name,
-          })));
-        }
-      }
-      // All other doc types: saved to budget_documents only, no auto-posting
-
-      updateItem(item.id, { status: 'done', result: parsed });
+      updateItem(item.id, { status: 'done', result: { ...parsed, destination: item.destination } });
     } catch (err: any) {
       console.error('Doc analysis error:', err);
       updateItem(item.id, { status: 'error', error: err?.message || 'Analysis failed. Try a clearer image or PDF.' });
     }
   };
 
+  const routeTransactions = async (item: QueuedFile, parsed: any, docId: string | null) => {
+    const dest = item.destination;
+    const docType = (parsed.doc_type || item.docType || '').toLowerCase();
+    const isPayStub = docType.includes('pay') || docType.includes('stub') || docType.includes('paycheck');
+    const isTaxForm = docType.includes('tax') || docType.includes('w2') || docType.includes('1099');
+
+    // ── PERSONAL ROUTING ──
+    if (dest === 'personal' || dest === 'both') {
+      const personalInserts: any[] = [];
+      const fallbackDate = parsed.transactions?.[0]?.date || new Date().toISOString().split('T')[0];
+      const kf = parsed.key_figures || [];
+
+      if (isPayStub) {
+        const netPayFig = kf.find((k: any) => k.label?.toLowerCase().includes('net pay'));
+        const netPay = netPayFig
+          ? parseFloat(netPayFig.value?.replace(/[$,]/g, '') || '0')
+          : parseFloat(parsed.net_cashflow || '0');
+        if (netPay > 0) {
+          personalInserts.push({
+            description: `Net Pay — ${parsed.period || 'Pay Period'}`,
+            amount: netPay, type: 'income', category_name: 'Salary / Wages',
+            date: fallbackDate, source: `document:${item.file.name}`, source_doc_id: docId,
+          });
+        }
+        const skipDescs = ['deposit to checking', 'deposit to savings', 'direct deposit', 'savings deposit'];
+        (parsed.transactions || []).filter((t: any) => {
+          if (t.type !== 'debit') return false;
+          return !skipDescs.some(s => (t.description || '').toLowerCase().includes(s));
+        }).forEach((t: any) => {
+          const d = (t.description || '').toLowerCase();
+          let cat = 'Personal Care';
+          if (d.includes('federal') || d.includes('state tax') || d.includes('fica') || d.includes('social security') || d.includes('medicare')) cat = 'Taxes';
+          else if (d.includes('medical') || d.includes('dental') || d.includes('vision') || d.includes('health') || d.includes('hospital')) cat = 'Health & Wellness';
+          else if (d.includes('401k') || d.includes('401(k)') || d.includes('retirement')) cat = 'Emergency Fund';
+          else if (d.includes('savings')) cat = 'Savings';
+          personalInserts.push({ description: t.description, amount: Math.abs(parseFloat(t.amount) || 0), type: 'expense', category_name: cat, date: t.date || fallbackDate, source: `document:${item.file.name}`, source_doc_id: docId });
+        });
+      } else if (isTaxForm) {
+        const box1 = kf.find((k: any) => k.label?.toLowerCase().includes('box 1') || k.label?.toLowerCase().includes('wages') || k.label?.toLowerCase().includes('compensation'));
+        const withheld = kf.find((k: any) => k.label?.toLowerCase().includes('withheld') || k.label?.toLowerCase().includes('federal income tax'));
+        if (box1) personalInserts.push({ description: `W2/1099 Income — ${parsed.period || item.file.name}`, amount: parseFloat(box1.value?.replace(/[$,]/g, '') || '0'), type: 'income', category_name: 'Salary / Wages', date: fallbackDate, source: `document:${item.file.name}`, source_doc_id: docId });
+        if (withheld) personalInserts.push({ description: `Federal Tax Withheld — ${parsed.period || item.file.name}`, amount: parseFloat(withheld.value?.replace(/[$,]/g, '') || '0'), type: 'expense', category_name: 'Taxes', date: fallbackDate, source: `document:${item.file.name}`, source_doc_id: docId });
+        // Fallback to transactions
+        if (!box1 && (parsed.transactions || []).length > 0) {
+          (parsed.transactions || []).filter((t: any) => Math.abs(parseFloat(t.amount) || 0) > 0).forEach((t: any) => {
+            const type = t.type === 'credit' ? 'income' : 'expense';
+            personalInserts.push({ description: t.description || 'Tax Form Entry', amount: Math.abs(parseFloat(t.amount) || 0), type, category_name: type === 'income' ? 'Salary / Wages' : 'Taxes', date: t.date || fallbackDate, source: `document:${item.file.name}`, source_doc_id: docId });
+          });
+        }
+      } else {
+        // Bank statement, investment, utility, other → route all transactions
+        (parsed.transactions || []).filter((t: any) => Math.abs(parseFloat(t.amount) || 0) > 0).forEach((t: any) => {
+          const type = t.type === 'credit' ? 'income' : 'expense';
+          const d = (t.description || '').toLowerCase();
+          let cat = type === 'income' ? 'Other Income' : 'Personal Care';
+          if (type === 'income') {
+            if (d.includes('payroll') || d.includes('direct deposit') || d.includes('salary') || d.includes('net pay')) cat = 'Salary / Wages';
+            else if (d.includes('transfer') || d.includes('interest') || d.includes('refund')) cat = 'Other Income';
+          } else {
+            if (d.includes('rent') || d.includes('mortgage') || d.includes('lease')) cat = 'Housing / Rent';
+            else if (d.includes('food') || d.includes('grocery') || d.includes('walmart') || d.includes('kroger') || d.includes('publix') || d.includes('aldi') || d.includes('whole foods')) cat = 'Food & Groceries';
+            else if (d.includes('gas') || d.includes('uber') || d.includes('lyft') || d.includes('transport') || d.includes('airline') || d.includes('flight')) cat = 'Transportation';
+            else if (d.includes('medical') || d.includes('dental') || d.includes('health') || d.includes('pharmacy') || d.includes('doctor')) cat = 'Health & Wellness';
+            else if (d.includes('netflix') || d.includes('spotify') || d.includes('entertainment') || d.includes('amazon prime') || d.includes('hulu')) cat = 'Entertainment';
+            else if (d.includes('savings')) cat = 'Savings';
+            else if (d.includes('federal') || d.includes('state tax') || d.includes('fica') || d.includes('medicare')) cat = 'Taxes';
+          }
+          personalInserts.push({ description: t.description || 'Transaction', amount: Math.abs(parseFloat(t.amount) || 0), type, category_name: cat, date: t.date || fallbackDate, source: `document:${item.file.name}`, source_doc_id: docId });
+        });
+      }
+      if (personalInserts.length > 0) await supabase.from('personal_transactions').insert(personalInserts);
+    }
+
+    // ── BUSINESS ROUTING ──
+    if (dest === 'business' || dest === 'both') {
+      const debits = (parsed.transactions || []).filter((t: any) => t.type === 'debit' && Math.abs(parseFloat(t.amount) || 0) > 0);
+      const credits = (parsed.transactions || []).filter((t: any) => t.type === 'credit' && Math.abs(parseFloat(t.amount) || 0) > 0);
+      const fallbackDate = new Date().toISOString().split('T')[0];
+
+      if (debits.length > 0) {
+        await supabase.from('expenses').insert(debits.map((t: any) => {
+          const d = (t.description || '').toLowerCase();
+          let cat = 'Other';
+          if (d.includes('software') || d.includes('subscription') || d.includes('saas') || d.includes('hosting') || d.includes('domain')) cat = 'Software & Tools';
+          else if (d.includes('marketing') || d.includes('ad') || d.includes('facebook') || d.includes('google ads') || d.includes('meta')) cat = 'Marketing & Ads';
+          else if (d.includes('travel') || d.includes('flight') || d.includes('hotel') || d.includes('airbnb') || d.includes('uber')) cat = 'Travel';
+          else if (d.includes('meal') || d.includes('restaurant') || d.includes('food') || d.includes('dining')) cat = 'Meals & Entertainment';
+          else if (d.includes('equipment') || d.includes('hardware') || d.includes('device') || d.includes('laptop')) cat = 'Equipment';
+          else if (d.includes('consulting') || d.includes('legal') || d.includes('accountant') || d.includes('lawyer') || d.includes('attorney')) cat = 'Professional Services';
+          return {
+            division: 'Consulting',
+            category: cat,
+            amount: Math.abs(parseFloat(t.amount) || 0),
+            description: t.description || 'Document Import',
+            date: t.date || fallbackDate,
+            source: 'document_import',
+            doc_source: item.file.name,
+          };
+        }));
+      }
+      // Only add credits to business revenue if explicitly routed to business
+      if (credits.length > 0 && dest === 'business') {
+        await supabase.from('revenue').insert(credits.map((t: any) => ({
+          product_name: t.description || 'Business Income',
+          amount: Math.abs(parseFloat(t.amount) || 0),
+          source: parsed.doc_type || 'Document Import',
+          date: t.date || fallbackDate,
+        })));
+      }
+    }
+    // dest === 'none' → only saved to budget_documents, no transaction routing
+  };
+
   const analyzeAll = async () => {
-    const pending = queue.filter(q => q.status === 'pending');
-    if (pending.length === 0) return;
+    const ready = queue.filter(q => q.status === 'ready' || q.status === 'pending');
+    if (!ready.length) return;
     setProcessing(true);
-    for (const item of pending) {
+    for (const item of ready) {
+      // If still in pending/detecting, wait briefly
+      if (item.status === 'detecting') {
+        await new Promise(r => setTimeout(r, 1500));
+      }
       await analyzeFile(item);
     }
     setProcessing(false);
@@ -314,7 +430,8 @@ export default function Documents() {
     fetchHistory();
   };
 
-  const pendingCount = queue.filter(q => q.status === 'pending').length;
+  const pendingCount = queue.filter(q => q.status === 'pending' || q.status === 'ready').length;
+  const detectingCount = queue.filter(q => q.status === 'detecting').length;
   const doneCount = queue.filter(q => q.status === 'done').length;
   const errorCount = queue.filter(q => q.status === 'error').length;
   const analyzingItem = queue.find(q => q.status === 'analyzing');
@@ -323,20 +440,17 @@ export default function Documents() {
   const totalExpenses = history.reduce((s, d) => s + parseFloat(d.total_expenses || 0), 0);
   const netCashflow = totalIncome - totalExpenses;
 
-  const statusColor = (s: string) => ({ done: '#2A9D8F', error: '#C1121F', analyzing: '#C9A84C', pending: 'rgba(255,255,255,0.3)' }[s] || '#999');
-  const statusLabel = (s: string) => ({ done: '✅ Done', error: '❌ Failed', analyzing: '🔍 Analyzing...', pending: '⏳ Pending' }[s] || s);
+  const statusColor = (s: string) => ({ done: '#2A9D8F', error: '#C1121F', analyzing: '#C9A84C', detecting: '#9B5DE5', ready: '#3a86ff', pending: 'rgba(255,255,255,0.3)' }[s] || '#999');
+  const statusLabel = (s: string) => ({ done: '✅ Done', error: '❌ Failed', analyzing: '🔍 Analyzing...', detecting: '🤖 Detecting...', ready: '✅ Ready', pending: '⏳ Pending' }[s] || s);
+
+  const destInfo = (d: string) => BUDGET_DESTINATIONS.find(x => x.value === d) || BUDGET_DESTINATIONS[0];
 
   return (
     <Layout activeTab="documents">
-      {/* Override the global input CSS for the hidden file input */}
       <style>{`
         input[type="file"].doc-upload-input {
-          display: none !important;
-          width: 0 !important;
-          height: 0 !important;
-          opacity: 0 !important;
-          position: absolute !important;
-          overflow: hidden !important;
+          display: none !important; width: 0 !important; height: 0 !important;
+          opacity: 0 !important; position: absolute !important; overflow: hidden !important;
         }
       `}</style>
 
@@ -345,7 +459,7 @@ export default function Documents() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2rem' }}>
           <div>
             <h2 style={{ margin: '0 0 6px 0', color: '#fff', fontSize: '22px', fontWeight: '700', fontFamily: "'Lora', serif" }}>Document Intelligence</h2>
-            <p style={{ margin: 0, color: 'rgba(255,255,255,0.5)', fontSize: '14px' }}>Upload multiple documents — AI extracts and saves all financial data automatically</p>
+            <p style={{ margin: 0, color: 'rgba(255,255,255,0.5)', fontSize: '14px' }}>AI auto-identifies every document and routes transactions to the right budget</p>
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
             <button onClick={() => setActiveView('upload')} style={{ padding: '10px 18px', borderRadius: '8px', border: 'none', background: activeView === 'upload' ? '#C9A84C' : 'rgba(255,255,255,0.08)', color: activeView === 'upload' ? '#1A1A2E' : 'rgba(255,255,255,0.6)', fontWeight: activeView === 'upload' ? '700' : '400', fontSize: '13px', cursor: 'pointer', fontFamily: 'Poppins,sans-serif' }}>
@@ -357,12 +471,12 @@ export default function Documents() {
           </div>
         </div>
 
-        {/* Running Totals */}
+        {/* KPI Row */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
           {[
             { label: 'Documents Uploaded', value: String(history.length), color: '#C9A84C' },
-            { label: 'Total Income', value: `$${totalIncome.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#2A9D8F' },
-            { label: 'Total Expenses', value: `$${totalExpenses.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#C1121F' },
+            { label: 'Total Income Extracted', value: `$${totalIncome.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#2A9D8F' },
+            { label: 'Total Expenses Extracted', value: `$${totalExpenses.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#C1121F' },
             { label: 'Net Cash Flow', value: `${netCashflow >= 0 ? '+' : ''}$${Math.abs(netCashflow).toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: netCashflow >= 0 ? '#2A9D8F' : '#C1121F' },
           ].map(m => (
             <div key={m.label} className="card-hover" style={card}>
@@ -375,35 +489,40 @@ export default function Documents() {
         {/* UPLOAD VIEW */}
         {activeView === 'upload' && (
           <div>
-            {/* Default doc type + trigger button */}
-            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <label style={{ margin: 0, whiteSpace: 'nowrap', fontSize: '13px' }}>Default type:</label>
-                <select value={defaultDocType} onChange={e => setDefaultDocType(e.target.value)}
-                  style={{ width: 'auto !important', padding: '8px 14px !important', fontSize: '13px !important' }}>
-                  {DOC_TYPES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
-                </select>
+            {/* Upload controls */}
+            <div style={{ ...card, marginBottom: '1.5rem', borderColor: 'rgba(201,168,76,0.3)' }}>
+              <h3 style={{ margin: '0 0 1rem 0', color: '#fff', fontSize: '14px', fontWeight: '600' }}>Upload Settings</h3>
+              <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                <div>
+                  <label>Document Type</label>
+                  <select value={defaultDocType} onChange={e => setDefaultDocType(e.target.value)} style={{ width: 'auto !important' }}>
+                    {DOC_TYPES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+                  </select>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: 'rgba(255,255,255,0.35)' }}>
+                    {defaultDocType === 'auto' ? '🤖 AI will identify each document automatically' : 'Applied to all files in this batch'}
+                  </p>
+                </div>
+                <div>
+                  <label>Save To Budget</label>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    {BUDGET_DESTINATIONS.map(d => (
+                      <button key={d.value} onClick={() => setDefaultDestination(d.value as any)}
+                        style={{ padding: '8px 14px', borderRadius: '8px', border: `2px solid ${defaultDestination === d.value ? d.color : 'rgba(255,255,255,0.1)'}`, background: defaultDestination === d.value ? `${d.color}22` : 'transparent', color: defaultDestination === d.value ? d.color : 'rgba(255,255,255,0.45)', fontWeight: defaultDestination === d.value ? '700' : '400', fontSize: '12px', cursor: 'pointer', fontFamily: 'Poppins,sans-serif', whiteSpace: 'nowrap' }}>
+                        {d.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: 'rgba(255,255,255,0.35)' }}>
+                    {defaultDocType === 'auto' ? 'AI will also suggest the right budget — you can override per file' : 'Where transactions will be saved after analysis'}
+                  </p>
+                </div>
+                <div style={{ marginLeft: 'auto' }}>
+                  <label htmlFor="doc-file-input" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '11px 22px', borderRadius: '8px', background: 'linear-gradient(135deg, #C9A84C, #9B5DE5)', color: '#fff', fontWeight: '700', fontSize: '13px', cursor: 'pointer', fontFamily: 'Poppins,sans-serif', userSelect: 'none' }}>
+                    📂 Choose Files
+                  </label>
+                  <input id="doc-file-input" className="doc-upload-input" type="file" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" multiple onChange={handleInputChange} />
+                </div>
               </div>
-
-              {/* Explicit "Choose Files" button — most reliable cross-browser approach */}
-              <label htmlFor="doc-file-input" style={{
-                display: 'inline-flex', alignItems: 'center', gap: '8px',
-                padding: '10px 20px', borderRadius: '8px',
-                background: 'linear-gradient(135deg, #C9A84C, #9B5DE5)',
-                color: '#fff', fontWeight: '700', fontSize: '13px',
-                cursor: 'pointer', fontFamily: 'Poppins,sans-serif',
-                userSelect: 'none',
-              }}>
-                📂 Choose Files (select multiple)
-              </label>
-              <input
-                id="doc-file-input"
-                className="doc-upload-input"
-                type="file"
-                accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
-                multiple
-                onChange={handleInputChange}
-              />
             </div>
 
             {/* Drop Zone */}
@@ -412,116 +531,140 @@ export default function Documents() {
               onDragEnter={e => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
               onDragLeave={e => { e.preventDefault(); e.stopPropagation(); setDragOver(false); }}
               onDrop={handleDrop}
-              style={{
-                border: `2px dashed ${dragOver ? '#C9A84C' : 'rgba(201,168,76,0.25)'}`,
-                borderRadius: '12px', padding: '2.5rem 2rem', textAlign: 'center',
-                background: dragOver ? 'rgba(201,168,76,0.08)' : 'rgba(255,255,255,0.02)',
-                transition: 'all 0.15s ease', marginBottom: '1.5rem',
-              }}
+              style={{ border: `2px dashed ${dragOver ? '#C9A84C' : 'rgba(201,168,76,0.2)'}`, borderRadius: '12px', padding: '2rem', textAlign: 'center', background: dragOver ? 'rgba(201,168,76,0.06)' : 'rgba(255,255,255,0.01)', transition: 'all 0.15s ease', marginBottom: '1.5rem' }}
             >
-              <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>📂</div>
-              <p style={{ margin: '0 0 4px 0', color: dragOver ? '#C9A84C' : 'rgba(255,255,255,0.6)', fontSize: '15px', fontWeight: '600' }}>
-                {dragOver ? 'Drop files here' : 'Or drag & drop multiple files here'}
+              <p style={{ margin: 0, color: dragOver ? '#C9A84C' : 'rgba(255,255,255,0.4)', fontSize: '14px' }}>
+                {dragOver ? '📂 Drop files here' : 'Or drag & drop files here — PDF, PNG, JPG, JPEG'}
               </p>
-              <p style={{ margin: 0, color: 'rgba(255,255,255,0.3)', fontSize: '12px' }}>PDF, PNG, JPG, JPEG</p>
             </div>
 
-            {/* Queue controls */}
+            {/* Queue */}
             {queue.length > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-                <div style={{ display: 'flex', gap: '12px', fontSize: '13px', flexWrap: 'wrap' }}>
-                  <span style={{ color: '#fff', fontWeight: '600' }}>{queue.length} file{queue.length !== 1 ? 's' : ''} in queue</span>
-                  {pendingCount > 0 && <span style={{ color: 'rgba(255,255,255,0.45)' }}>⏳ {pendingCount} pending</span>}
-                  {analyzingItem && <span style={{ color: '#C9A84C' }}>🔍 Analyzing: {analyzingItem.file.name}</span>}
-                  {doneCount > 0 && <span style={{ color: '#2A9D8F' }}>✅ {doneCount} done</span>}
-                  {errorCount > 0 && <span style={{ color: '#C1121F' }}>❌ {errorCount} failed</span>}
-                </div>
-                <div style={{ display: 'flex', gap: '0.75rem' }}>
-                  <button onClick={() => setQueue([])} style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid rgba(193,18,31,0.4)', background: 'transparent', color: '#C1121F', fontSize: '13px', cursor: 'pointer', fontFamily: 'Poppins,sans-serif' }}>
-                    Clear All
-                  </button>
-                  <button onClick={analyzeAll} disabled={processing || pendingCount === 0}
-                    style={{ padding: '10px 24px', borderRadius: '8px', border: 'none', background: processing || pendingCount === 0 ? 'rgba(255,255,255,0.08)' : 'linear-gradient(135deg, #C9A84C, #9B5DE5)', color: processing || pendingCount === 0 ? 'rgba(255,255,255,0.3)' : '#fff', fontWeight: '700', fontSize: '13px', cursor: processing || pendingCount === 0 ? 'not-allowed' : 'pointer', fontFamily: 'Poppins,sans-serif' }}>
-                    {processing
-                      ? `🔍 Analyzing ${doneCount + 1} of ${doneCount + pendingCount + (analyzingItem ? 1 : 0)}...`
-                      : `✨ Analyze All ${pendingCount} Document${pendingCount !== 1 ? 's' : ''}`}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Queue list */}
-            {queue.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem' }}>
-                {queue.map(item => (
-                  <div key={item.id} style={card}>
-                    {/* File row */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: '1rem', alignItems: 'center', marginBottom: item.result ? '1rem' : 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
-                        <span style={{ fontSize: '1.4rem', flexShrink: 0 }}>{item.file.name.toLowerCase().endsWith('.pdf') ? '📄' : '🖼️'}</span>
-                        <div style={{ minWidth: 0 }}>
-                          <p style={{ margin: 0, color: '#fff', fontWeight: '600', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.file.name}</p>
-                          <p style={{ margin: 0, color: 'rgba(255,255,255,0.35)', fontSize: '11px' }}>{(item.file.size / 1024).toFixed(1)} KB</p>
-                        </div>
-                      </div>
-                      <select value={item.docType} onChange={e => updateItem(item.id, { docType: e.target.value })} disabled={item.status !== 'pending'}
-                        style={{ width: 'auto !important', padding: '6px 10px !important', fontSize: '12px !important', opacity: item.status !== 'pending' ? 0.5 : 1 }}>
-                        {DOC_TYPES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
-                      </select>
-                      <span style={{ padding: '3px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '600', background: `${statusColor(item.status)}18`, color: statusColor(item.status), whiteSpace: 'nowrap' }}>
-                        {statusLabel(item.status)}
-                      </span>
-                      <button onClick={() => setQueue(prev => prev.filter(q => q.id !== item.id))} disabled={item.status === 'analyzing'}
-                        style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.25)', cursor: item.status === 'analyzing' ? 'not-allowed' : 'pointer', fontSize: '18px', padding: '2px 6px', lineHeight: 1 }}>
-                        ×
-                      </button>
-                    </div>
-
-                    {/* Error */}
-                    {item.error && (
-                      <p style={{ margin: 0, color: '#ff6b6b', fontSize: '12px', padding: '8px 12px', background: 'rgba(193,18,31,0.1)', borderRadius: '6px' }}>{item.error}</p>
-                    )}
-
-                    {/* Result */}
-                    {item.result && (
-                      <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: '1rem' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr 1fr 1fr', gap: '0.75rem', marginBottom: '0.5rem' }}>
-                          <div>
-                            <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>Period</p>
-                            <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: '#C9A84C', fontWeight: '600' }}>{item.result.period || '—'}</p>
-                          </div>
-                          {[
-                            { label: 'Income', value: `$${parseFloat(item.result.total_income || 0).toLocaleString()}`, color: '#2A9D8F' },
-                            { label: 'Expenses', value: `$${parseFloat(item.result.total_expenses || 0).toLocaleString()}`, color: '#C1121F' },
-                            { label: 'Net', value: `$${parseFloat(item.result.net_cashflow || 0).toLocaleString()}`, color: parseFloat(item.result.net_cashflow || 0) >= 0 ? '#2A9D8F' : '#C1121F' },
-                          ].map(m => (
-                            <div key={m.label} style={{ textAlign: 'center', background: 'rgba(255,255,255,0.03)', borderRadius: '6px', padding: '0.4rem 0.75rem' }}>
-                              <p style={{ margin: 0, fontSize: '10px', color: 'rgba(255,255,255,0.35)' }}>{m.label}</p>
-                              <p style={{ margin: '2px 0 0 0', fontSize: '15px', fontWeight: '700', color: m.color }}>{m.value}</p>
-                            </div>
-                          ))}
-                        </div>
-                        <p style={{ margin: '0 0 4px 0', color: 'rgba(255,255,255,0.45)', fontSize: '12px', lineHeight: '1.5', fontStyle: 'italic' }}>{item.result.summary}</p>
-                        {item.result.transactions?.length > 0 && (
-                          <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#2A9D8F' }}>✅ {item.result.transactions.length} transactions saved to budget</p>
-                        )}
-                        {item.result.alerts?.map((a: string, i: number) => (
-                          <p key={i} style={{ margin: '3px 0 0 0', fontSize: '12px', color: '#f4a261' }}>⚠️ {a}</p>
-                        ))}
-                      </div>
-                    )}
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', gap: '12px', fontSize: '13px', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span style={{ color: '#fff', fontWeight: '600' }}>{queue.length} file{queue.length !== 1 ? 's' : ''}</span>
+                    {detectingCount > 0 && <span style={{ color: '#9B5DE5' }}>🤖 {detectingCount} detecting type...</span>}
+                    {pendingCount > 0 && <span style={{ color: '#3a86ff' }}>✅ {pendingCount} ready</span>}
+                    {analyzingItem && <span style={{ color: '#C9A84C' }}>🔍 {analyzingItem.file.name}</span>}
+                    {doneCount > 0 && <span style={{ color: '#2A9D8F' }}>✅ {doneCount} done</span>}
+                    {errorCount > 0 && <span style={{ color: '#C1121F' }}>❌ {errorCount} failed</span>}
                   </div>
-                ))}
-              </div>
+                  <div style={{ display: 'flex', gap: '0.75rem' }}>
+                    <button onClick={() => setQueue([])} style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid rgba(193,18,31,0.4)', background: 'transparent', color: '#C1121F', fontSize: '13px', cursor: 'pointer', fontFamily: 'Poppins,sans-serif' }}>Clear All</button>
+                    <button onClick={analyzeAll} disabled={processing || (pendingCount === 0 && detectingCount === 0)}
+                      style={{ padding: '10px 24px', borderRadius: '8px', border: 'none', background: processing || pendingCount === 0 ? 'rgba(255,255,255,0.08)' : 'linear-gradient(135deg, #C9A84C, #9B5DE5)', color: processing || pendingCount === 0 ? 'rgba(255,255,255,0.3)' : '#fff', fontWeight: '700', fontSize: '13px', cursor: processing || pendingCount === 0 ? 'not-allowed' : 'pointer', fontFamily: 'Poppins,sans-serif' }}>
+                      {processing ? `🔍 Analyzing...` : `✨ Analyze All (${pendingCount})`}
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                  {queue.map(item => {
+                    const di = destInfo(item.destination);
+                    return (
+                      <div key={item.id} style={{ ...card, borderLeft: `3px solid ${di.color}` }}>
+                        {/* File header row */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '1rem', alignItems: 'center', marginBottom: '0.75rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
+                            <span style={{ fontSize: '1.4rem', flexShrink: 0 }}>{item.file.name.toLowerCase().endsWith('.pdf') ? '📄' : '🖼️'}</span>
+                            <div style={{ minWidth: 0 }}>
+                              <p style={{ margin: 0, color: '#fff', fontWeight: '600', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.file.name}</p>
+                              <p style={{ margin: '2px 0 0 0', color: 'rgba(255,255,255,0.35)', fontSize: '11px' }}>
+                                {(item.file.size / 1024).toFixed(1)} KB
+                                {item.detectedType && item.detectedType !== 'detection failed' && (
+                                  <span style={{ marginLeft: '8px', color: '#9B5DE5', fontWeight: '600' }}>🤖 Identified: {item.detectedType}</span>
+                                )}
+                                {item.detectedType === 'detection failed' && (
+                                  <span style={{ marginLeft: '8px', color: '#f4a261' }}>⚠️ Auto-detect failed — select type manually</span>
+                                )}
+                              </p>
+                            </div>
+                          </div>
+                          <span style={{ padding: '3px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '600', background: `${statusColor(item.status)}18`, color: statusColor(item.status), whiteSpace: 'nowrap' }}>
+                            {statusLabel(item.status)}
+                          </span>
+                          <button onClick={() => setQueue(prev => prev.filter(q => q.id !== item.id))} disabled={item.status === 'analyzing' || item.status === 'detecting'}
+                            style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.25)', cursor: 'pointer', fontSize: '18px', padding: '2px 6px', lineHeight: 1 }}>×</button>
+                        </div>
+
+                        {/* Controls row — doc type + destination (always editable before analyze) */}
+                        {(item.status === 'ready' || item.status === 'pending' || item.status === 'detecting') && (
+                          <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', flexWrap: 'wrap', paddingTop: '0.5rem', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                            <div style={{ flex: 1, minWidth: '160px' }}>
+                              <label style={{ fontSize: '11px' }}>Document Type</label>
+                              <select value={item.docType === 'auto' ? 'bank_statement' : item.docType}
+                                onChange={e => updateItem(item.id, { docType: e.target.value })}
+                                style={{ width: '100% !important', padding: '6px 10px !important', fontSize: '12px !important' }}>
+                                {DOC_TYPES.filter(d => d.value !== 'auto').map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+                              </select>
+                            </div>
+                            <div style={{ flex: 2, minWidth: '240px' }}>
+                              <label style={{ fontSize: '11px' }}>Save Transactions To</label>
+                              <div style={{ display: 'flex', gap: '4px' }}>
+                                {BUDGET_DESTINATIONS.map(d => (
+                                  <button key={d.value} onClick={() => updateItem(item.id, { destination: d.value as any })}
+                                    style={{ flex: 1, padding: '6px 4px', borderRadius: '6px', border: `1.5px solid ${item.destination === d.value ? d.color : 'rgba(255,255,255,0.08)'}`, background: item.destination === d.value ? `${d.color}22` : 'transparent', color: item.destination === d.value ? d.color : 'rgba(255,255,255,0.35)', fontWeight: item.destination === d.value ? '700' : '400', fontSize: '11px', cursor: 'pointer', fontFamily: 'Poppins,sans-serif', whiteSpace: 'nowrap', textAlign: 'center' }}>
+                                    {d.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Error */}
+                        {item.error && <p style={{ margin: '0.5rem 0 0 0', color: '#ff6b6b', fontSize: '12px', padding: '8px 12px', background: 'rgba(193,18,31,0.1)', borderRadius: '6px' }}>{item.error}</p>}
+
+                        {/* Result */}
+                        {item.result && (
+                          <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: '1rem', marginTop: '0.75rem' }}>
+                            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '0.5rem', alignItems: 'center' }}>
+                              <div>
+                                <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>Period</p>
+                                <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: '#C9A84C', fontWeight: '600' }}>{item.result.period || '—'}</p>
+                              </div>
+                              {[
+                                { label: 'Income', value: `$${parseFloat(item.result.total_income || 0).toLocaleString()}`, color: '#2A9D8F' },
+                                { label: 'Expenses', value: `$${parseFloat(item.result.total_expenses || 0).toLocaleString()}`, color: '#C1121F' },
+                                { label: 'Net', value: `$${parseFloat(item.result.net_cashflow || 0).toLocaleString()}`, color: parseFloat(item.result.net_cashflow || 0) >= 0 ? '#2A9D8F' : '#C1121F' },
+                              ].map(m => (
+                                <div key={m.label} style={{ textAlign: 'center', background: 'rgba(255,255,255,0.03)', borderRadius: '6px', padding: '0.35rem 0.75rem' }}>
+                                  <p style={{ margin: 0, fontSize: '10px', color: 'rgba(255,255,255,0.35)' }}>{m.label}</p>
+                                  <p style={{ margin: '2px 0 0 0', fontSize: '14px', fontWeight: '700', color: m.color }}>{m.value}</p>
+                                </div>
+                              ))}
+                              <div style={{ marginLeft: 'auto', padding: '4px 10px', borderRadius: '6px', background: `${di.color}18`, border: `1px solid ${di.color}40` }}>
+                                <p style={{ margin: 0, fontSize: '11px', color: di.color, fontWeight: '700' }}>→ {di.label}</p>
+                              </div>
+                            </div>
+                            <p style={{ margin: 0, color: 'rgba(255,255,255,0.45)', fontSize: '12px', lineHeight: '1.5', fontStyle: 'italic' }}>{item.result.summary}</p>
+                            {item.result.transactions?.length > 0 && <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#2A9D8F' }}>✅ {item.result.transactions.length} transactions saved to {di.label}</p>}
+                            {item.result.alerts?.map((a: string, i: number) => <p key={i} style={{ margin: '3px 0 0 0', fontSize: '12px', color: '#f4a261' }}>⚠️ {a}</p>)}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
             )}
 
             {queue.length === 0 && (
-              <div style={{ padding: '1rem 1.25rem', background: 'rgba(42,157,143,0.06)', border: '1px solid rgba(42,157,143,0.2)', borderRadius: '8px' }}>
-                <p style={{ margin: '0 0 4px 0', color: '#2A9D8F', fontSize: '12px', fontWeight: '600' }}>✅ HOW IT WORKS</p>
-                <p style={{ margin: 0, color: 'rgba(255,255,255,0.45)', fontSize: '12px', lineHeight: '1.8' }}>
-                  Click "Choose Files" to select multiple documents at once, or drag & drop them into the zone above.
-                  AI reads every figure and transaction → saved to your private history → transactions auto-added to Expenses & Revenue.
-                </p>
+              <div style={{ ...card, borderColor: 'rgba(42,157,143,0.25)', background: 'rgba(42,157,143,0.04)' }}>
+                <p style={{ margin: '0 0 8px 0', color: '#2A9D8F', fontSize: '13px', fontWeight: '600' }}>✅ HOW IT WORKS</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
+                  {[
+                    { step: '1', title: 'Upload', desc: 'Click Choose Files or drag & drop. Select as many documents as you want at once.' },
+                    { step: '2', title: 'AI Auto-Identifies', desc: 'AI instantly reads each file, identifies the type (pay stub, W2, bank statement), and suggests the right budget destination. You can override any decision.' },
+                    { step: '3', title: 'Analyze & Route', desc: 'Click Analyze All. Transactions are extracted and saved exactly where you told them to go — Personal, Business, or Both.' },
+                  ].map(s => (
+                    <div key={s.step} style={{ display: 'flex', gap: '0.75rem' }}>
+                      <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#C9A84C', color: '#1A1A2E', fontWeight: '700', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px' }}>{s.step}</div>
+                      <div><p style={{ margin: '0 0 3px 0', color: '#fff', fontWeight: '600', fontSize: '13px' }}>{s.title}</p><p style={{ margin: 0, color: 'rgba(255,255,255,0.45)', fontSize: '12px', lineHeight: '1.5' }}>{s.desc}</p></div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -531,43 +674,46 @@ export default function Documents() {
         {activeView === 'history' && (
           <div>
             {loadingHistory ? (
-              <div style={{ ...card, textAlign: 'center', padding: '3rem' }}>
-                <p style={{ color: 'rgba(255,255,255,0.4)', margin: 0 }}>Loading document history...</p>
-              </div>
+              <div style={{ ...card, textAlign: 'center', padding: '3rem' }}><p style={{ color: 'rgba(255,255,255,0.4)', margin: 0 }}>Loading history...</p></div>
             ) : history.length === 0 ? (
               <div style={{ ...card, textAlign: 'center', padding: '4rem' }}>
                 <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📂</div>
-                <p style={{ color: 'rgba(255,255,255,0.4)', margin: '0 0 6px 0', fontSize: '14px' }}>No documents uploaded yet</p>
+                <p style={{ color: 'rgba(255,255,255,0.4)', margin: 0 }}>No documents uploaded yet</p>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                {history.map(doc => (
-                  <div key={doc.id} className="card-hover" style={{ ...card, display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: '1rem', alignItems: 'center' }}>
-                    <div>
-                      <p style={{ margin: 0, color: '#fff', fontWeight: '600', fontSize: '14px' }}>{doc.file_name}</p>
-                      <p style={{ margin: '2px 0 0 0', color: 'rgba(255,255,255,0.4)', fontSize: '12px' }}>
-                        {doc.doc_type}{doc.period ? ` • ${doc.period}` : ''} • {doc.file_size_kb} KB
-                      </p>
-                      {doc.summary && <p style={{ margin: '4px 0 0 0', color: 'rgba(255,255,255,0.45)', fontSize: '12px', lineHeight: '1.4' }}>{doc.summary.slice(0, 110)}{doc.summary.length > 110 ? '...' : ''}</p>}
+                {history.map(doc => {
+                  const destLabel = BUDGET_DESTINATIONS.find(d => d.value === doc.budget_destination)?.label || '📁 Saved';
+                  const destColor = BUDGET_DESTINATIONS.find(d => d.value === doc.budget_destination)?.color || 'rgba(255,255,255,0.3)';
+                  return (
+                    <div key={doc.id} className="card-hover" style={{ ...card, display: 'grid', gridTemplateColumns: '2fr auto auto auto auto auto', gap: '1rem', alignItems: 'center', borderLeft: `3px solid ${destColor}` }}>
+                      <div>
+                        <p style={{ margin: 0, color: '#fff', fontWeight: '600', fontSize: '14px' }}>{doc.file_name}</p>
+                        <p style={{ margin: '2px 0 0 0', color: 'rgba(255,255,255,0.4)', fontSize: '12px' }}>
+                          {doc.doc_type}{doc.period ? ` • ${doc.period}` : ''} • {doc.file_size_kb} KB
+                        </p>
+                        {doc.summary && <p style={{ margin: '3px 0 0 0', color: 'rgba(255,255,255,0.4)', fontSize: '12px', lineHeight: '1.4' }}>{doc.summary.slice(0, 100)}{doc.summary.length > 100 ? '...' : ''}</p>}
+                      </div>
+                      <div style={{ textAlign: 'center' }}>
+                        <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.35)' }}>Income</p>
+                        <p style={{ margin: '2px 0 0 0', fontSize: '15px', fontWeight: '700', color: '#2A9D8F' }}>${parseFloat(doc.total_income || 0).toLocaleString()}</p>
+                      </div>
+                      <div style={{ textAlign: 'center' }}>
+                        <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.35)' }}>Expenses</p>
+                        <p style={{ margin: '2px 0 0 0', fontSize: '15px', fontWeight: '700', color: '#C1121F' }}>${parseFloat(doc.total_expenses || 0).toLocaleString()}</p>
+                      </div>
+                      <div style={{ textAlign: 'center' }}>
+                        <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.35)' }}>Saved To</p>
+                        <p style={{ margin: '2px 0 0 0', fontSize: '12px', fontWeight: '600', color: destColor }}>{destLabel}</p>
+                      </div>
+                      <div style={{ textAlign: 'center' }}>
+                        <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.35)' }}>Date</p>
+                        <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>{new Date(doc.uploaded_at).toLocaleDateString()}</p>
+                      </div>
+                      <button onClick={() => deleteDoc(doc.id)} style={{ background: 'rgba(193,18,31,0.12)', border: '1px solid rgba(193,18,31,0.25)', borderRadius: '6px', color: '#C1121F', cursor: 'pointer', padding: '6px 10px', fontSize: '13px' }}>🗑️</button>
                     </div>
-                    <div style={{ textAlign: 'center' }}>
-                      <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.35)' }}>Income</p>
-                      <p style={{ margin: '2px 0 0 0', fontSize: '16px', fontWeight: '700', color: '#2A9D8F' }}>${parseFloat(doc.total_income || 0).toLocaleString()}</p>
-                    </div>
-                    <div style={{ textAlign: 'center' }}>
-                      <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.35)' }}>Expenses</p>
-                      <p style={{ margin: '2px 0 0 0', fontSize: '16px', fontWeight: '700', color: '#C1121F' }}>${parseFloat(doc.total_expenses || 0).toLocaleString()}</p>
-                    </div>
-                    <div style={{ textAlign: 'center' }}>
-                      <p style={{ margin: 0, fontSize: '11px', color: 'rgba(255,255,255,0.35)' }}>Uploaded</p>
-                      <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>{new Date(doc.uploaded_at).toLocaleDateString()}</p>
-                    </div>
-                    <button onClick={() => deleteDoc(doc.id)}
-                      style={{ background: 'rgba(193,18,31,0.12)', border: '1px solid rgba(193,18,31,0.25)', borderRadius: '6px', color: '#C1121F', cursor: 'pointer', padding: '6px 10px', fontSize: '13px' }}>
-                      🗑️
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
