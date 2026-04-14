@@ -129,8 +129,30 @@ export default function Reports() {
       const data = await res.json();
       const text = data.content?.find((c: any) => c.type === 'text')?.text || '';
       const emailContent = JSON.parse(text.replace(/```json|```/g, '').trim());
-      setEmailSent(`✅ Report ready to send: "${emailContent.subject}" — Report composed — send to cs@cjhadisa.com`);
-      setTimeout(() => setEmailSent(''), 8000);
+      // Open mailto with pre-filled subject and plain-text body
+      const plainBody = emailContent.body
+        ? emailContent.body.replace(/<[^>]+>/g, '').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').trim()
+        : 'See attached report.';
+      const mailtoUrl = `mailto:cs@cjhadisa.com?subject=${encodeURIComponent(emailContent.subject || 'C.H.A. LLC Financial Report')}&body=${encodeURIComponent(plainBody.slice(0, 1800))}`;
+      // Try server-side send first
+      try {
+        const emailRes = await fetch('/api/email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: 'cs@cjhadisa.com', subject: emailContent.subject, body: emailContent.body }),
+        });
+        const emailData = await emailRes.json();
+        if (emailData.method === 'smtp') {
+          setEmailSent(`✅ Report sent to cs@cjhadisa.com: "${emailContent.subject}"`);
+        } else {
+          window.open(mailtoUrl, '_blank');
+          setEmailSent(`✅ Email client opened: "${emailContent.subject}"`);
+        }
+      } catch {
+        window.open(mailtoUrl, '_blank');
+        setEmailSent(`✅ Email client opened: "${emailContent.subject}"`);
+      }
+      setTimeout(() => setEmailSent(''), 6000);
     } catch { setEmailSent('Could not compose report. Try generating AI analysis first.'); }
     finally { setSendingEmail(false); }
   };

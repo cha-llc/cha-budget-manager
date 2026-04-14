@@ -123,7 +123,20 @@ export default function TaxPlanning() {
             <select value={taxYear} onChange={e => setTaxYear(e.target.value)} style={{ width: 'auto !important', padding: '8px 14px !important' }}>
               {['2024', '2025', '2026'].map(y => <option key={y}>{y}</option>)}
             </select>
-            <select value={filingStatus} onChange={e => { setFilingStatus(e.target.value); saveEntry(); }} style={{ width: 'auto !important', padding: '8px 14px !important' }}>
+            <select value={filingStatus} onChange={async e => {
+              const newStatus = e.target.value;
+              setFilingStatus(newStatus);
+              // Save immediately with the new status value (avoids stale closure)
+              setSaving(true);
+              const updateData: TaxEntry = { filing_status: newStatus, updated_at: new Date().toISOString() };
+              [...INCOME_FIELDS, ...DEDUCT_FIELDS].forEach(f => {
+                updateData[f.key] = parseFloat(entry[f.key] || '0') || 0;
+              });
+              await supabase.from('tax_entries').update(updateData).eq('tax_year', taxYear);
+              setSaving(false);
+              setSaveMsg('✅ Saved');
+              setTimeout(() => setSaveMsg(''), 2000);
+            }} style={{ width: 'auto !important', padding: '8px 14px !important' }}>
               <option value="single">Single</option>
               <option value="married_jointly">Married Filing Jointly</option>
               <option value="married_separately">Married Filing Separately</option>

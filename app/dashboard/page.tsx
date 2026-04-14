@@ -32,6 +32,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState('');
+  const [aiInsight, setAiInsight] = useState('');
+  const [loadingInsight, setLoadingInsight] = useState(false);
 
   const syncStripe = async () => {
     setSyncing(true);
@@ -49,8 +51,6 @@ export default function Dashboard() {
     setSyncing(false);
     setTimeout(() => setSyncMsg(''), 5000);
   };
-  const [aiInsight, setAiInsight] = useState('');
-  const [loadingInsight, setLoadingInsight] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
