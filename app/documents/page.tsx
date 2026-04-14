@@ -276,7 +276,7 @@ export default function Documents() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: 'claude-sonnet-4-6',
-          max_tokens: 2000,
+          max_tokens: 8000,
           system: AI_ANALYZE_SYSTEM,
           messages: [{
             role: 'user',
@@ -290,8 +290,60 @@ export default function Documents() {
 
       const data = await res.json();
       const text = data.content?.find((c: any) => c.type === 'text')?.text || '';
-      if (!text) throw new Error('No response from AI');
-      const parsed = JSON.parse(text.replace(/```json|```/g, '').trim());
+      if (!text) {
+        const errMsg = data.error?.message || 'No response from AI';
+        throw new Error(errMsg);
+      }
+
+      // Check if response was cut off by token limit
+      const stopReason = data.stop_reason;
+      if (stopReason === 'max_tokens') {
+        // Response was truncated — attempt JSON repair before failing
+        console.warn('Response hit max_tokens, attempting JSON repair...');
+      }
+
+      // Robust JSON extraction and repair
+      const parsed = (() => {
+        let raw = text.replace(/```json|```/g, '').trim();
+        // Find the outermost JSON object
+        const start = raw.indexOf('{');
+        if (start === -1) throw new Error('No JSON object found in AI response');
+        raw = raw.slice(start);
+
+        // Try clean parse first
+        try { return JSON.parse(raw); } catch {}
+
+        // Attempt repair: truncated JSON is missing closing brackets/braces
+        // Count open vs close braces/brackets to find what's missing
+        let braces = 0, brackets = 0;
+        let inString = false, escape = false;
+        for (const ch of raw) {
+          if (escape) { escape = false; continue; }
+          if (ch === '\\' && inString) { escape = true; continue; }
+          if (ch === '"' && !escape) { inString = !inString; continue; }
+          if (inString) continue;
+          if (ch === '{') braces++;
+          else if (ch === '}') braces--;
+          else if (ch === '[') brackets++;
+          else if (ch === ']') brackets--;
+        }
+
+        // Trim any trailing incomplete string or partial value
+        // Find last complete field by truncating at last clean comma or closing bracket
+        let repaired = raw;
+        // Remove trailing incomplete token (partial string, partial number, etc.)
+        repaired = repaired.replace(/,\s*"[^"]*$/, ''); // cut trailing incomplete key
+        repaired = repaired.replace(/:\s*"[^"]*$/, ': ""'); // cut trailing incomplete value
+        repaired = repaired.replace(/,\s*$/, ''); // cut trailing comma
+
+        // Close any open arrays then objects
+        for (let i = 0; i < brackets; i++) repaired += ']';
+        for (let i = 0; i < braces; i++) repaired += '}';
+
+        try { return JSON.parse(repaired); } catch (e2) {
+          throw new Error(`JSON parse failed even after repair. stop_reason=${stopReason}. Try a smaller document or split into pages.`);
+        }
+      })();
 
       // Save to budget_documents
       const { data: savedDoc } = await supabase.from('budget_documents').insert([{
