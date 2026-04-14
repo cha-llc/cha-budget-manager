@@ -197,26 +197,99 @@ export default function Documents() {
         net_cashflow: parsed.net_cashflow || 0,
       }]);
 
-      // Auto-add transactions to expenses/revenue tables
-      const credits = (parsed.transactions || []).filter((t: any) => t.type === 'credit');
-      const debits = (parsed.transactions || []).filter((t: any) => t.type === 'debit');
-      if (credits.length > 0) {
-        await supabase.from('revenue').insert(credits.map((t: any) => ({
-          product_name: t.description || 'Document Import',
-          amount: Math.abs(parseFloat(t.amount) || 0),
-          source: parsed.doc_type || docLabel,
-          date: t.date || new Date().toISOString().split('T')[0],
-        })));
+      // Smart auto-categorization: only post ACTUAL business transactions to business tables
+      // Personal documents (pay stubs, personal bank statements) go to personal_transactions only
+      const docTypeLower = (parsed.doc_type || item.docType || '').toLowerCase();
+      const isPayStub = docTypeLower.includes('pay') || docTypeLower.includes('stub') || docTypeLower.includes('paycheck');
+      const isBankStatement = docTypeLower.includes('bank') || docTypeLower.includes('statement');
+      const isBusinessDoc = docTypeLower.includes('invoice') || docTypeLower.includes('receipt') || docTypeLower.includes('tax');
+
+      if (isPayStub) {
+        // Pay stubs → personal_transactions ONLY. Never touch business revenue/expenses.
+        const kf = parsed.key_figures || [];
+        const netPayFig = kf.find((k: any) => k.label?.toLowerCase().includes('net pay'));
+        const netPay = netPayFig
+          ? parseFloat(netPayFig.value?.replace(/[$,]/g, '') || '0')
+          : parseFloat(parsed.net_cashflow || '0');
+
+        const payDate = parsed.transactions?.[0]?.date || new Date().toISOString().split('T')[0];
+        const skipDescs = ['deposit to checking', 'deposit to savings', 'direct deposit', 'savings deposit'];
+
+        const personalInserts: any[] = [];
+        if (netPay > 0) {
+          personalInserts.push({
+            description: `Net Pay — ${parsed.period || 'Pay Period'}`,
+            amount: netPay, type: 'income', category_name: 'Salary / Wages',
+            date: payDate, source: `document:${item.file.name}`, source_doc_id: null,
+          });
+        }
+        (parsed.transactions || []).filter((t: any) => {
+          if (t.type !== 'debit') return false;
+          const d = (t.description || '').toLowerCase();
+          return !skipDescs.some(s => d.includes(s));
+        }).forEach((t: any) => {
+          const d = t.description.toLowerCase();
+          let cat = 'Personal Care';
+          if (d.includes('federal') || d.includes('state tax') || d.includes('fica') || d.includes('social security') || d.includes('medicare') || d.includes('income tax')) cat = 'Taxes';
+          else if (d.includes('medical') || d.includes('dental') || d.includes('vision') || d.includes('health') || d.includes('hospital')) cat = 'Health & Wellness';
+          else if (d.includes('401k') || d.includes('401(k)') || d.includes('retirement') || d.includes('emergency')) cat = 'Emergency Fund';
+          else if (d.includes('savings')) cat = 'Savings';
+          personalInserts.push({
+            description: t.description, amount: Math.abs(parseFloat(t.amount) || 0),
+            type: 'expense', category_name: cat,
+            date: t.date || payDate, source: `document:${item.file.name}`, source_doc_id: null,
+          });
+        });
+        if (personalInserts.length > 0) {
+          await supabase.from('personal_transactions').insert(personalInserts);
+        }
+
+      } else if (isBankStatement) {
+        // Bank statements → personal_transactions ONLY. Not business tables.
+        const txInserts = (parsed.transactions || [])
+          .filter((t: any) => Math.abs(parseFloat(t.amount) || 0) > 0)
+          .map((t: any) => {
+            const type = t.type === 'credit' ? 'income' : 'expense';
+            const d = (t.description || '').toLowerCase();
+            let cat = type === 'income' ? 'Other Income' : 'Personal Care';
+            if (type === 'income') {
+              if (d.includes('payroll') || d.includes('direct deposit') || d.includes('salary') || d.includes('net pay')) cat = 'Salary / Wages';
+              else if (d.includes('transfer') || d.includes('interest')) cat = 'Other Income';
+            } else {
+              if (d.includes('rent') || d.includes('mortgage')) cat = 'Housing / Rent';
+              else if (d.includes('food') || d.includes('grocery') || d.includes('walmart') || d.includes('kroger') || d.includes('publix') || d.includes('aldi')) cat = 'Food & Groceries';
+              else if (d.includes('gas') || d.includes('uber') || d.includes('lyft') || d.includes('transport')) cat = 'Transportation';
+              else if (d.includes('medical') || d.includes('dental') || d.includes('health') || d.includes('pharmacy')) cat = 'Health & Wellness';
+              else if (d.includes('netflix') || d.includes('spotify') || d.includes('entertainment') || d.includes('amazon prime')) cat = 'Entertainment';
+              else if (d.includes('savings')) cat = 'Savings';
+            }
+            return {
+              description: t.description || 'Bank Transaction', amount: Math.abs(parseFloat(t.amount) || 0),
+              type, category_name: cat,
+              date: t.date || new Date().toISOString().split('T')[0],
+              source: `document:${item.file.name}`, source_doc_id: null,
+            };
+          });
+        if (txInserts.length > 0) {
+          await supabase.from('personal_transactions').insert(txInserts);
+        }
+
+      } else if (isBusinessDoc) {
+        // Receipts/invoices/tax forms → business expenses table with proper categorization
+        const debits = (parsed.transactions || []).filter((t: any) => t.type === 'debit');
+        if (debits.length > 0) {
+          await supabase.from('expenses').insert(debits.map((t: any) => ({
+            division: 'Consulting',
+            category: 'Professional Services',
+            amount: Math.abs(parseFloat(t.amount) || 0),
+            description: t.description || 'Document Import',
+            date: t.date || new Date().toISOString().split('T')[0],
+            source: 'document_import',
+            doc_source: item.file.name,
+          })));
+        }
       }
-      if (debits.length > 0) {
-        await supabase.from('expenses').insert(debits.map((t: any) => ({
-          division: 'Consulting',
-          category: 'Other',
-          amount: Math.abs(parseFloat(t.amount) || 0),
-          description: t.description || 'Document Import',
-          date: t.date || new Date().toISOString().split('T')[0],
-        })));
-      }
+      // All other doc types: saved to budget_documents only, no auto-posting
 
       updateItem(item.id, { status: 'done', result: parsed });
     } catch (err: any) {

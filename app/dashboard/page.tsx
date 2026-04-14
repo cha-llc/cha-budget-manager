@@ -69,9 +69,9 @@ export default function Dashboard() {
     fetchData();
   }, []);
 
-  const totalBudget = budgets.reduce((s, b) => s + b.monthly_budget, 0);
-  const totalSpent = expenses.reduce((s, e) => s + e.amount, 0);
-  const totalRevenue = revenue.reduce((s, r) => s + r.amount, 0);
+  const totalBudget = budgets.reduce((s, b) => s + parseFloat(b.monthly_budget || 0), 0);
+  const totalSpent = expenses.reduce((s, e) => s + parseFloat(e.amount || 0), 0);
+  const totalRevenue = revenue.reduce((s, r) => s + parseFloat(r.amount || 0), 0);
   const netCashFlow = totalRevenue - totalSpent;
 
   const getAIInsight = async () => {

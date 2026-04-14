@@ -223,6 +223,40 @@ export default function Budgets() {
           });
         });
 
+      } else if (docTypeLower.includes('tax') || docTypeLower.includes('w2') || docTypeLower.includes('1099')) {
+        // Tax forms (W2, 1099): income = Box 1 wages, expenses = taxes withheld
+        const kf = doc.key_figures || [];
+        const box1 = kf.find((k: any) => k.label?.toLowerCase().includes('box 1') || k.label?.toLowerCase().includes('wages') || k.label?.toLowerCase().includes('compensation'));
+        const taxWithheld = kf.find((k: any) => k.label?.toLowerCase().includes('withheld') || k.label?.toLowerCase().includes('federal income tax'));
+        if (box1) {
+          inserts.push({
+            description: `W2/1099 Income — ${doc.period || doc.file_name}`,
+            amount: parseFloat(box1.value?.replace(/[$,]/g, '') || '0'),
+            type: 'income', category_name: 'Salary / Wages',
+            date: fallbackDate, source: `document:${doc.file_name}`, source_doc_id: doc.id,
+          });
+        }
+        if (taxWithheld) {
+          inserts.push({
+            description: `Federal Tax Withheld — ${doc.period || doc.file_name}`,
+            amount: parseFloat(taxWithheld.value?.replace(/[$,]/g, '') || '0'),
+            type: 'expense', category_name: 'Taxes',
+            date: fallbackDate, source: `document:${doc.file_name}`, source_doc_id: doc.id,
+          });
+        }
+        // Fallback to transaction list if no key figures found
+        if (!box1 && txs.length > 0) {
+          txs.forEach((tx: any) => {
+            const amount = Math.abs(parseFloat(tx.amount) || 0);
+            if (amount === 0) return;
+            const type = tx.type === 'credit' ? 'income' : 'expense';
+            inserts.push({
+              description: tx.description || 'Tax Form Entry', amount, type,
+              category_name: type === 'income' ? 'Salary / Wages' : 'Taxes',
+              date: tx.date || fallbackDate, source: `document:${doc.file_name}`, source_doc_id: doc.id,
+            });
+          });
+        }
       } else {
         // Receipts, invoices, other: import as-is with smart categorization
         txs.forEach((tx: any) => {
@@ -231,8 +265,7 @@ export default function Budgets() {
           const type = tx.type === 'credit' ? 'income' : 'expense';
           inserts.push({
             description: tx.description || 'Transaction',
-            amount,
-            type,
+            amount, type,
             category_name: matchCategory(tx.description || '', type),
             date: tx.date || fallbackDate,
             source: `document:${doc.file_name}`,
