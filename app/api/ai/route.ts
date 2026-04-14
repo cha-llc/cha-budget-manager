@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import getConfig from 'next/config';
 
-// Raise body size limit to 20MB to handle large PDF/image base64 payloads
-export const config = {
-  api: { bodyParser: { sizeLimit: '20mb' } },
-};
-
+// Next.js 14 App Router: set max duration for large PDF processing
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {

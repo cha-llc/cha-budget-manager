@@ -3,6 +3,12 @@ const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
   images: { unoptimized: true },
+  // Raise body size limit for PDF/image base64 uploads (default 4MB is too small)
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '20mb',
+    },
+  },
   env: {
     // Anthropic key split across two vars to avoid GitHub secret scanning
     ANTHROPIC_KEY_A: process.env.ANTHROPIC_KEY_A || 'sk-ant-api03-2JSL9va30VT5Gh-P1vYtTw3NbXZasIV3h6cWUZUaNeP6MzDl73Ogyu6-kf2GDfOa',
