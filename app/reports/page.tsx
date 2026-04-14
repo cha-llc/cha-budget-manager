@@ -97,7 +97,7 @@ export default function Reports() {
             role: 'user',
             content: isPersonal
               ? `Personal finance ${period} report. Income: $${totalPersIncome.toFixed(2)}, Expenses: $${totalPersExpenses.toFixed(2)}, Net: $${persNet.toFixed(2)}. Income by source: ${JSON.stringify(topPersIncomeCats)}. Spending by category: ${JSON.stringify(topPersExpCats)}. Budget categories with amounts: ${JSON.stringify(persWithBudget.map(c => ({name:c.name, budget:c.budget, spent:c.spent})))}. Provide specific personal finance advice.`
-              : `C.H.A. LLC ${period} business report. Division: ${division}. Revenue: $${totalBizRevenue.toFixed(2)}, Expenses: $${totalBizExpenses.toFixed(2)}, Net: $${bizNet.toFixed(2)}. Revenue by product: ${JSON.stringify(topProducts.slice(0,5))}. Expenses by category: ${JSON.stringify(topBizCats)}. 5 products live (BrandPulse $47, Clarity Engine $37, Flagged $4.99, Freedom Era Audit $150, Business Ops Fixer $497).`
+              : `C.H.A. LLC ${period} business report. Division: ${division}. Revenue: $${totalBizRevenue.toFixed(2)}, Expenses: $${totalBizExpenses.toFixed(2)}, Net: $${bizNet.toFixed(2)}. Revenue by product: ${JSON.stringify(topProducts.slice(0,5))}. Expenses by category: ${JSON.stringify(topBizCats)}. 8 products live: BrandPulse $47, Clarity Engine $37, Flagged $4.99/mo, Freedom Era Audit $150, Business Ops Fixer $497, Burnout Reset $67, Couples Clarity $97, First-Gen Table $17/mo.`
           }]
         })
       });
@@ -241,7 +241,7 @@ export default function Reports() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
                   <div style={card}>
                     <h3 style={{ margin: '0 0 1.25rem 0', color: '#fff', fontSize: '15px', fontWeight: '600' }}>Revenue by Product</h3>
-                    {topProducts.length === 0 ? <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '13px' }}>No revenue yet — products live April 14</p>
+                    {topProducts.length === 0 ? <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '13px' }}>No revenue recorded yet — sync Stripe or log revenue manually</p>
                       : topProducts.map(([name, amt]) => (
                         <div key={name} style={{ marginBottom: '0.75rem' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>

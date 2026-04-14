@@ -5,7 +5,7 @@ import Layout from '@/components/Layout';
 import { supabase } from '@/lib/supabase';
 import { buildPersonalInserts } from '@/lib/docRouting';
 
-const card = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(201,168,76,0.2)', borderRadius: '12px', padding: '1.5rem' } as const;
+const card = { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '16px', padding: '1.5rem' } as const;
 
 const TABS = ['Overview', 'Transactions', 'Categories', 'From Documents'];
 
