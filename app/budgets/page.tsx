@@ -426,6 +426,39 @@ export default function Budgets() {
         {/* ═══════════════════════════════════════ PERSONAL MODE ═══════════════════════════════════════ */}
         {mode === 'personal' && (
           <div>
+            {/* ── CLEAR ALL BAR — always visible at top of personal section ── */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.85rem 1.25rem', background: 'rgba(193,18,31,0.06)', border: '1px solid rgba(193,18,31,0.2)', borderRadius: '10px', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div>
+                <p style={{ margin: 0, color: 'rgba(255,255,255,0.7)', fontSize: '13px', fontWeight: '600' }}>🔄 Start Over with Fresh Data</p>
+                <p style={{ margin: '2px 0 0 0', color: 'rgba(255,255,255,0.35)', fontSize: '11px' }}>Clears all uploaded documents, imported transactions, and resets budget amounts to $0</p>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                {clearMsg && <span style={{ fontSize: '12px', color: clearMsg.startsWith('✅') ? '#2A9D8F' : '#C1121F', fontWeight: '600' }}>{clearMsg}</span>}
+                {clearConfirm === 'idle' && (
+                  <button onClick={() => setClearConfirm('confirm')}
+                    style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid rgba(193,18,31,0.6)', background: 'rgba(193,18,31,0.12)', color: '#C1121F', fontWeight: '700', fontSize: '13px', cursor: 'pointer', fontFamily: 'Poppins,sans-serif', whiteSpace: 'nowrap' }}>
+                    🗑️ Clear All & Start Fresh
+                  </button>
+                )}
+                {clearConfirm === 'confirm' && (
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '12px', color: '#f4a261', fontWeight: '600' }}>⚠️ Deletes all docs + imported transactions. Cannot undo.</span>
+                    <button onClick={clearAllData}
+                      style={{ padding: '8px 18px', borderRadius: '8px', border: 'none', background: '#C1121F', color: '#fff', fontWeight: '700', fontSize: '13px', cursor: 'pointer', fontFamily: 'Poppins,sans-serif', whiteSpace: 'nowrap' }}>
+                      Yes, Clear Everything
+                    </button>
+                    <button onClick={() => setClearConfirm('idle')}
+                      style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.2)', background: 'transparent', color: 'rgba(255,255,255,0.6)', fontSize: '13px', cursor: 'pointer', fontFamily: 'Poppins,sans-serif' }}>
+                      Cancel
+                    </button>
+                  </div>
+                )}
+                {clearConfirm === 'clearing' && (
+                  <span style={{ fontSize: '13px', color: '#C9A84C', fontWeight: '600' }}>⏳ Clearing all data...</span>
+                )}
+              </div>
+            </div>
+
             {/* Personal KPIs */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
               {[
@@ -470,35 +503,7 @@ export default function Budgets() {
             {/* Import individual document + Clear All */}
             {documents.length > 0 && (
               <div style={{ ...card, marginBottom: '1.5rem' }}>
-                {/* Section header with Clear All button */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-                  <h3 style={{ margin: 0, color: '#fff', fontSize: '15px', fontWeight: '600' }}>📥 Import Transactions from a Specific Document</h3>
-                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    {clearConfirm === 'idle' && (
-                      <button onClick={() => setClearConfirm('confirm')}
-                        style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid rgba(193,18,31,0.4)', background: 'transparent', color: '#C1121F', fontWeight: '600', fontSize: '12px', cursor: 'pointer', fontFamily: 'Poppins,sans-serif' }}>
-                        🗑️ Clear All & Start Fresh
-                      </button>
-                    )}
-                    {clearConfirm === 'confirm' && (
-                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                        <span style={{ fontSize: '12px', color: '#f4a261' }}>⚠️ This deletes all docs + imported transactions. Sure?</span>
-                        <button onClick={clearAllData}
-                          style={{ padding: '6px 14px', borderRadius: '8px', border: 'none', background: '#C1121F', color: '#fff', fontWeight: '700', fontSize: '12px', cursor: 'pointer', fontFamily: 'Poppins,sans-serif' }}>
-                          Yes, Clear Everything
-                        </button>
-                        <button onClick={() => setClearConfirm('idle')}
-                          style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.15)', background: 'transparent', color: 'rgba(255,255,255,0.5)', fontSize: '12px', cursor: 'pointer', fontFamily: 'Poppins,sans-serif' }}>
-                          Cancel
-                        </button>
-                      </div>
-                    )}
-                    {clearConfirm === 'clearing' && (
-                      <span style={{ fontSize: '12px', color: '#C9A84C' }}>⏳ Clearing...</span>
-                    )}
-                  </div>
-                </div>
-                {clearMsg && <div style={{ padding: '10px 14px', background: clearMsg.startsWith('✅') ? 'rgba(42,157,143,0.1)' : 'rgba(193,18,31,0.1)', border: `1px solid ${clearMsg.startsWith('✅') ? 'rgba(42,157,143,0.3)' : 'rgba(193,18,31,0.3)'}`, borderRadius: '8px', color: clearMsg.startsWith('✅') ? '#2A9D8F' : '#C1121F', fontSize: '13px', marginBottom: '1rem' }}>{clearMsg}</div>}
+                <h3 style={{ margin: '0 0 1rem 0', color: '#fff', fontSize: '15px', fontWeight: '600' }}>📥 Import Transactions from a Specific Document</h3>
                 {importMsg && <div style={{ padding: '10px 14px', background: 'rgba(42,157,143,0.1)', border: '1px solid rgba(42,157,143,0.3)', borderRadius: '8px', color: '#2A9D8F', fontSize: '13px', marginBottom: '1rem' }}>{importMsg}</div>}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
                   {documents.map(doc => {
