@@ -1,21 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const PUBLIC_PATHS = ['/login', '/api/auth/login', '/favicon.ico', '/manifest.json', '/sw.js'];
+// Paths that never require auth
+const PUBLIC_PATHS = ['/login', '/favicon.ico', '/manifest.json', '/sw.js'];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Allow public paths and static files
-  if (PUBLIC_PATHS.some(p => pathname.startsWith(p)) || pathname.startsWith('/_next') || pathname.startsWith('/api/auth')) {
+  // Always allow: static files, Next internals, ALL api routes, public pages
+  if (
+    pathname.startsWith('/_next') ||
+    pathname.startsWith('/api/') ||
+    PUBLIC_PATHS.some(p => pathname.startsWith(p))
+  ) {
     return NextResponse.next();
   }
 
+  // All other routes require a valid session cookie
   const token = req.cookies.get('cha_admin_token')?.value;
   if (!token) {
     return NextResponse.redirect(new URL('/login', req.url));
   }
 
-  // Verify token with Supabase
+  // Verify token against Supabase admin_sessions table
   const SUPA_URL = 'https://vzzzqsmqqaoilkmskadl.supabase.co';
   const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ6enpxc21xcWFvaWxrbXNrYWRsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4NjYzMjQsImV4cCI6MjA5MTQ0MjMyNH0.vYkiz5BeoJlhNzcEiiGQfsHLE5UfqJbTTBjNXk1xxJs';
 
@@ -32,6 +38,7 @@ export async function middleware(req: NextRequest) {
       return response;
     }
   } catch {
+    // On verify failure, redirect to login
     return NextResponse.redirect(new URL('/login', req.url));
   }
 
@@ -39,5 +46,6 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
+  // Apply to all routes except static assets
   matcher: ['/((?!_next/static|_next/image|favicon.ico|manifest.json|sw.js).*)'],
 };
