@@ -25,6 +25,13 @@ const NAV = [
 
 export default function Layout({ children, activeTab = 'dashboard' }: LayoutProps) {
   const [time, setTime] = useState('');
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    await fetch('/api/auth/logout', { method: 'POST' });
+    window.location.href = '/login';
+  };
 
   useEffect(() => {
     const tick = () => setTime(new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
@@ -142,6 +149,10 @@ export default function Layout({ children, activeTab = 'dashboard' }: LayoutProp
               </p>
               <p style={{ margin:0, fontSize:'10px', color:'rgba(201,168,76,0.5)', fontFamily:"'JetBrains Mono',monospace" }}>{time}</p>
             </div>
+            <button onClick={handleLogout} disabled={loggingOut}
+              style={{ padding:'7px 14px', borderRadius:'8px', background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.1)', color:'rgba(255,255,255,0.45)', fontSize:'11px', fontWeight:'600', cursor:'pointer', fontFamily:'Poppins,sans-serif', transition:'all 0.2s', letterSpacing:'0.3px' }}>
+              {loggingOut ? '...' : '⎋ Logout'}
+            </button>
           </div>
         </div>
       </header>

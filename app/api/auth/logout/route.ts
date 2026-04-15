@@ -1,0 +1,17 @@
+import { NextRequest, NextResponse } from 'next/server';
+
+const SUPA_URL = 'https://vzzzqsmqqaoilkmskadl.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ6enpxc21xcWFvaWxrbXNrYWRsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4NjYzMjQsImV4cCI6MjA5MTQ0MjMyNH0.vYkiz5BeoJlhNzcEiiGQfsHLE5UfqJbTTBjNXk1xxJs';
+
+export async function POST(req: NextRequest) {
+  const token = req.cookies.get('cha_admin_token')?.value;
+  if (token) {
+    await fetch(`${SUPA_URL}/rest/v1/admin_sessions?token=eq.${token}`, {
+      method: 'DELETE',
+      headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}` },
+    });
+  }
+  const response = NextResponse.json({ success: true });
+  response.cookies.set('cha_admin_token', '', { maxAge: 0, path: '/' });
+  return response;
+}
