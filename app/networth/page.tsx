@@ -1,6 +1,7 @@
 'use client';
 import React, { useState, useEffect } from 'react';
 import Layout from '@/components/Layout';
+import { SkeletonKPI, SkeletonCard, SkeletonTable } from '@/components/Skeleton';
 import { supabase } from '@/lib/supabase';
 
 const G='#C9A84C';
@@ -53,6 +54,19 @@ export default function NetWorth() {
   const liabGroups = groupBy(liabilities);
 
   const COLORS=['#2A9D8F','#C9A84C','#9B5DE5','#3a86ff','#06d6a0','#f4a261','#ffd166','#ef476f','#8ecae6','#023047'];
+
+  if (loading) return (
+    <Layout activeTab="networth">
+      <div style={{maxWidth:'1280px'}}>
+        <div style={{marginBottom:'2rem',height:'36px',width:'240px',borderRadius:'8px',background:'rgba(255,255,255,0.05)'}} />
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'1rem',marginBottom:'1.5rem'}}>
+          <SkeletonKPI /><SkeletonKPI /><SkeletonKPI /><SkeletonKPI />
+        </div>
+        <SkeletonCard height="240px" lines={5} />
+        <div style={{marginTop:'1.25rem'}}><SkeletonTable rows={7} /></div>
+      </div>
+    </Layout>
+  );
 
   return (
     <Layout activeTab="networth">

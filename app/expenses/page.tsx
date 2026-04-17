@@ -1,6 +1,7 @@
 'use client';
 import React, { useState, useEffect, useRef } from 'react';
 import Layout from '@/components/Layout';
+import { SkeletonKPI, SkeletonCard, SkeletonTable } from '@/components/Skeleton';
 import { supabase } from '@/lib/supabase';
 
 const DIVISIONS = ['Consulting', 'Tea Time Network', 'Digital Tools', 'Books'];
@@ -142,6 +143,19 @@ export default function Expenses() {
   const maxBar = Math.max(...monthly.map(m=>Math.max(m.inc,m.exp)),1);
 
   const catColors = ['#C9A84C','#9B5DE5','#2A9D8F','#C1121F','#3a86ff','#f4a261','#06d6a0','#ef476f','#ffd166','#e9c46a'];
+
+  if (loading) return (
+    <Layout activeTab="expenses">
+      <div style={{maxWidth:'1280px'}}>
+        <div style={{marginBottom:'2rem',height:'36px',width:'240px',borderRadius:'8px',background:'rgba(255,255,255,0.05)'}} />
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'1rem',marginBottom:'1.5rem'}}>
+          <SkeletonKPI /><SkeletonKPI /><SkeletonKPI /><SkeletonKPI />
+        </div>
+        <SkeletonCard height="240px" lines={5} />
+        <div style={{marginTop:'1.25rem'}}><SkeletonTable rows={7} /></div>
+      </div>
+    </Layout>
+  );
 
   return (
     <Layout activeTab="expenses">

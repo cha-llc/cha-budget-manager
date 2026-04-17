@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Layout from '@/components/Layout';
+import { SkeletonKPI, SkeletonCard, SkeletonTable } from '@/components/Skeleton';
 import { supabase } from '@/lib/supabase';
 
 const card = { background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:'16px', padding:'1.5rem' } as const;
@@ -138,6 +139,19 @@ export default function Domination() {
 
   const milestoneStatusColor = (s: string) => s === 'completed' ? '#2A9D8F' : s === 'building' ? '#C9A84C' : 'rgba(255,255,255,0.2)';
   const milestoneStatusLabel = (s: string) => s === 'completed' ? '✅ DONE' : s === 'building' ? '🔨 BUILDING' : '⏳ PENDING';
+
+  if (loading) return (
+    <Layout activeTab="domination">
+      <div style={{maxWidth:'1280px'}}>
+        <div style={{marginBottom:'2rem',height:'36px',width:'240px',borderRadius:'8px',background:'rgba(255,255,255,0.05)'}} />
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'1rem',marginBottom:'1.5rem'}}>
+          <SkeletonKPI /><SkeletonKPI /><SkeletonKPI /><SkeletonKPI />
+        </div>
+        <SkeletonCard height="240px" lines={5} />
+        <div style={{marginTop:'1.25rem'}}><SkeletonTable rows={7} /></div>
+      </div>
+    </Layout>
+  );
 
   return (
     <Layout activeTab="domination">

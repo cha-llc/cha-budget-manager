@@ -1,6 +1,7 @@
 'use client';
 import React, { useEffect, useState, useCallback } from 'react';
 import Layout from '@/components/Layout';
+import { SkeletonKPI, SkeletonCard, SkeletonTable } from '@/components/Skeleton';
 import { supabase } from '@/lib/supabase';
 import { buildPersonalInserts, buildBusinessExpenseInserts } from '@/lib/docRouting';
 
@@ -198,6 +199,19 @@ export default function Budgets() {
   const maxBar = Math.max(...monthly.map(m=>Math.max(m.inc,m.exp)),1);
 
   const inputStyle = { background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.12)', color:'#fff', borderRadius:'8px', padding:'8px 12px', fontSize:'13px', width:'100%', fontFamily:'Poppins,sans-serif', outline:'none' };
+
+  if (loading) return (
+    <Layout activeTab="budgets">
+      <div style={{maxWidth:'1280px'}}>
+        <div style={{marginBottom:'2rem',height:'36px',width:'240px',borderRadius:'8px',background:'rgba(255,255,255,0.05)'}} />
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'1rem',marginBottom:'1.5rem'}}>
+          <SkeletonKPI /><SkeletonKPI /><SkeletonKPI /><SkeletonKPI />
+        </div>
+        <SkeletonCard height="240px" lines={5} />
+        <div style={{marginTop:'1.25rem'}}><SkeletonTable rows={7} /></div>
+      </div>
+    </Layout>
+  );
 
   return (
     <Layout activeTab="budgets">

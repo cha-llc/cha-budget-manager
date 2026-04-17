@@ -1,6 +1,7 @@
 'use client';
 import React, { useEffect, useState } from 'react';
 import Layout from '@/components/Layout';
+import { SkeletonDashboard } from '@/components/Skeleton';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 
@@ -121,6 +122,12 @@ export default function Dashboard() {
   const recentBiz = expenses.slice(0,3).map(e=>({...e,_type:'biz',_label:e.description||e.category,_amt:-e.amount}));
   const recentPers = persTxs.slice(0,3).map(t=>({...t,_type:'pers',_label:t.description||t.category_name,_amt:t.type==='income'?t.amount:-t.amount}));
   const recent = [...recentBiz,...recentPers].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,6);
+
+  if (loading) return (
+    <Layout activeTab="dashboard">
+      <SkeletonDashboard />
+    </Layout>
+  );
 
   return (
     <Layout activeTab="dashboard">
