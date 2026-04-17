@@ -42,8 +42,8 @@ export default function Expenses() {
   const loadAll = async () => {
     setLoading(true);
     const [er, tr] = await Promise.all([
-      supabase.from('expenses').select('*').order('date', { ascending: false }),
-      supabase.from('personal_transactions').select('*').order('date', { ascending: false }),
+      supabase.from('expenses').select('id,amount,date,description,category,division,source,is_business').order('date', { ascending: false }),
+      supabase.from('personal_transactions').select('id,amount,type,category_name,description,date').order('date', { ascending: false }),
     ]);
     if (er.data) setBizExpenses(er.data);
     if (tr.data) setPersTxs(tr.data);

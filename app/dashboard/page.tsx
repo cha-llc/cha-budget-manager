@@ -44,12 +44,12 @@ export default function Dashboard() {
   const loadAll = async () => {
     setLoading(true);
     const [er,rr,br,tr,nr,gr] = await Promise.all([
-      supabase.from('expenses').select('*'),
-      supabase.from('revenue').select('*'),
-      supabase.from('division_budgets').select('*'),
+      supabase.from('expenses').select('id,amount,date,description,category,division').order('date',{ascending:false}).limit(200),
+      supabase.from('revenue').select('id,amount,date,product_name,source'),
+      supabase.from('division_budgets').select('id,division,monthly_budget'),
       supabase.from('personal_transactions').select('*'),
-      supabase.from('networth_items').select('*'),
-      supabase.from('goals').select('*'),
+      supabase.from('networth_items').select('id,category,subcategory,value,name'),
+      supabase.from('goals').select('id,name,target,current_amount,category,deadline,monthly_contribution'),
     ]);
     if(er.data) setExpenses(er.data);
     if(rr.data) setRevenue(rr.data);

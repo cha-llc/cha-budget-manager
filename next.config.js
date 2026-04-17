@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  swcMinify: true,
+  compress: true,
   images: { unoptimized: true },
   // Raise body size limit for PDF/image base64 uploads (default 4MB is too small)
   experimental: {
