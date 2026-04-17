@@ -149,8 +149,8 @@ export default function Layout({ children, activeTab = 'dashboard' }: LayoutProp
               <p style={{ margin:0, fontSize:'10px', color:'rgba(201,168,76,0.5)', fontFamily:"'JetBrains Mono',monospace" }}>{time}</p>
             </div>
             <button onClick={handleLogout} disabled={loggingOut}
-              style={{ padding:'7px 14px', borderRadius:'8px', background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.1)', color:'rgba(255,255,255,0.45)', fontSize:'11px', fontWeight:'600', cursor:'pointer', fontFamily:'Poppins,sans-serif', transition:'all 0.2s', letterSpacing:'0.3px' }}>
-              {loggingOut ? '...' : '⎋ Logout'}
+              style={{ padding:'8px 16px', borderRadius:'8px', background:'rgba(193,18,31,0.15)', border:'1px solid rgba(193,18,31,0.4)', color:'#f87171', fontSize:'12px', fontWeight:'700', cursor:'pointer', fontFamily:'Poppins,sans-serif', transition:'all 0.2s', letterSpacing:'0.3px', whiteSpace:'nowrap' }}>
+              {loggingOut ? 'Signing out...' : '⎋ Sign Out'}
             </button>
           </div>
         </div>
