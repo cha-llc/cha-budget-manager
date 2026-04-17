@@ -21,6 +21,8 @@ const NAV = [
   { href:'/analytics', label:'Analytics', icon:'∿', key:'analytics' },
   { href:'/reports', label:'Reports', icon:'≡', key:'reports' },
   { href:'/domination', label:'Domination', icon:'✦', key:'domination' },
+  { href:'/nova',       label:'NOVA',       icon:'🎙', key:'nova' },
+  { href:'/reckoning',  label:'Reckoning',  icon:'⚡', key:'reckoning' },
 ];
 
 export default function Layout({ children, activeTab = 'dashboard' }: LayoutProps) {
