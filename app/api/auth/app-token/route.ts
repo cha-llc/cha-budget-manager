@@ -1,33 +1,45 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 
-const sb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+const SUPABASE_URL  = 'https://vzzzqsmqqaoilkmskadl.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ6enpxc21xcWFvaWxrbXNrYWRsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4NjYzMjQsImV4cCI6MjA5MTQ0MjMyNH0.vYkiz5BeoJlhNzcEiiGQfsHLE5UfqJbTTBjNXk1xxJs';
 
 export async function POST(req: NextRequest) {
-  // Verify Budget Manager session cookie
   const token = req.cookies.get('cha_admin_token')?.value;
   if (!token || token.length < 32) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { app } = await req.json();
-  if (!['nova', 'reckoning'].includes(app)) {
+  const body = await req.json().catch(() => ({}));
+  const app  = body?.app;
+  if (!['nova','reckoning'].includes(app)) {
     return NextResponse.json({ error: 'Invalid app' }, { status: 400 });
   }
 
-  // Generate access token — 24h expiry
-  const { data, error } = await sb
-    .from('app_access_tokens')
-    .insert({ app, expires_at: new Date(Date.now() + 86400000).toISOString() })
-    .select('token')
-    .single();
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/app_access_tokens`,
+    {
+      method:  'POST',
+      headers: {
+        apikey:          SUPABASE_ANON,
+        Authorization:   `Bearer ${SUPABASE_ANON}`,
+        'Content-Type':  'application/json',
+        'Prefer':        'return=representation',
+      },
+      body: JSON.stringify({ app }),
+    }
+  );
 
-  if (error || !data) {
+  if (!res.ok) {
+    const err = await res.text();
+    console.error('Token insert failed:', err);
     return NextResponse.json({ error: 'Token generation failed' }, { status: 500 });
   }
 
-  return NextResponse.json({ token: data.token });
+  const rows = await res.json();
+  const tokenValue = rows?.[0]?.token;
+  if (!tokenValue) {
+    return NextResponse.json({ error: 'No token returned' }, { status: 500 });
+  }
+
+  return NextResponse.json({ token: tokenValue });
 }
